@@ -428,8 +428,8 @@ class T1proEnv(VecEnv):
         processed_actions = cliped_actions * self.action_scale 
         
         all_actions = torch.zeros(self.num_envs, self.num_actions+self.cfg.rand_dof_nums, dtype=torch.float, device=self.device)
-        all_actions += self.robot.data.default_joint_pos
         all_actions[:, self.dof_ids] = processed_actions.clone()
+        all_actions += self.robot.data.default_joint_pos
         
         for _ in range(self.cfg.sim.decimation):
             self.sim_step_counter += 1
