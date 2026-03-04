@@ -281,7 +281,7 @@ def play():
 
     obs, _ = env.get_observations()
     logger = Logger(env.step_dt)
-    stop_state_log = 500
+    stop_state_log = 1000
     for i in tqdm(range(stop_state_log)):
 
         with torch.inference_mode():

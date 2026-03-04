@@ -1,0 +1,8 @@
+*.egg-info
+*.pyc
+.vscode
+outputs
+logs
+run_bash.sh
+wandb
+humanoid/assets/t1pro/train_asset

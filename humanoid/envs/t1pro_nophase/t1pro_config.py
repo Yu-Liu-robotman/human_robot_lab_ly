@@ -88,7 +88,7 @@ class T1proRewardCfg(RewardCfg):
         weight=-0.15,
         params={
             "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[".*_hip_yaw.*", ".*_hip_roll.*"]
+                "robot", joint_names=[".*_hip_roll.*"]
             )
         },
     )
@@ -104,7 +104,7 @@ class T1proRewardCfg(RewardCfg):
     joint_deviation_legs = RewTerm(
         func=mdp.joint_deviation_l1,
         weight=-0.02,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_pitch.*", ".*_knee.*", ".*_ankle.*"])},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw.*", ".*_hip_pitch.*", ".*_knee.*", ".*_ankle.*"])},
     )
     ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0005)
     ankle_action = RewTerm(func=mdp.ankle_action, weight=-0.001)

@@ -321,18 +321,42 @@ class HumaRobotSimRos(Node):
         ref_time = time.time()
         self.tau = np.zeros((mj_joint_num), dtype=np.double)
         self.step_sycle_time = param['cycle_time']
-        self.default_joint_pos = np.array(param['default_joint_pos'], dtype=np.double)
+        self.default_joint_pos = param['default_joint_pos']
         print("self.default_joint_pos:", self.default_joint_pos)
-        self.hand_default_joint_pos = [
+        self.all_default_joint_pos = [
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0,
             -0.1, 0.2, 0, -1.2, 0, 0, 0,
             -0.1, 0.2, 0, -1.2, 0, 0, 0
         ]
-        self.hand_kps = [100]*14
-        self.hand_kds = [10]*14
+        print("self.all_default_joint_pos:", self.all_default_joint_pos)
+        kps = [120., 250., 700., 350, 60., 150.,
+            120., 250., 700., 350, 60., 150.,
+            120., 250., 700.,
+            100, 100, 100, 100, 100, 100, 100,
+            100, 100, 100, 100, 100, 100, 100,
+            ]
+        kds = [ 5, 12.0, 40, 18, 3, 8,
+                5, 12.0, 40, 18, 3, 8,
+                5, 12.0, 40,
+                10, 10, 10, 10, 10, 10, 10,
+                10, 10, 10, 10, 10, 10, 10
+            ]
+        tau_limit = [80, 100, 200, 150, 40, 80,
+                    80, 100, 200, 150, 40, 80,
+                    80, 100, 200,
+                    50, 50, 50, 50, 50, 50, 50,
+                    50, 50, 50, 50, 50, 50, 50
+                    ]
+        pd_kps = np.array(kps, dtype=np.double)
+        pd_kds = np.array(kds, dtype=np.double)
+        tau_limit = np.array(tau_limit, dtype=np.double)
+        print("self.pd_kps:", pd_kps)
+        print("self.pd_kds:", pd_kds)
+        print("self.tau_limit:", tau_limit)
         print(param["exp_name"])
         print(param["exp_time"])
-        
-        
         with Timer(f'[INFO]: Time taken for {cfg.sim_config.sim_duration:.2f}s simulation\r'):
             for _ in range(int(cfg.sim_config.sim_duration / cfg.sim_config.dt)):
                 if not viewer.is_running():
@@ -348,22 +372,17 @@ class HumaRobotSimRos(Node):
                 force[:6] = force_sensor
                 # 1000hz -> 100hz
                 if count_lowlevel % cfg.sim_config.decimation == 0:
-                    target_q = self.rl_policy_forward(param=param, policy=policy, q=a_q-self.default_joint_pos, dq=a_dq, waist_orient_quat=quat,
+                    target_q = self.rl_policy_forward(param=param, policy=policy, q=(a_q-self.default_joint_pos), dq=a_dq, waist_orient_quat=quat,
                                                       waist_omega=omega, torque_foot=force, force_foot=force_foot,
                                                       lin_vel=lin_vel)
-                    target_q = target_q + self.default_joint_pos 
                 # 低级控制
-                target_dq = np.zeros((param['num_actions']), dtype=np.double)
+                all_target_dq = np.zeros((mj_joint_num), dtype=np.double)
+                
+                all_target_q = np.zeros((mj_joint_num), dtype=np.double)
+                all_target_q += self.all_default_joint_pos
+                all_target_q[dof_ids] = target_q
                 # Generate PD control
-                a_tau = self.pd_control(target_q, a_q, pd_kps, target_dq, a_dq, pd_kds)  # Calc torques
-                tau_num = len(a_tau)
-                if tau_num <= 15:
-                    target_dq = np.zeros((mj_joint_num-tau_num), dtype=np.double)
-                    d_tau = self.pd_control(self.hand_default_joint_pos, q[-(mj_joint_num-tau_num):], self.hand_kps, 
-                                            target_dq, dq[-(mj_joint_num-tau_num):], self.hand_kds)
-                a_tau = np.clip(a_tau, -tau_limit, tau_limit)  # Clamp torques
-                self.tau[dof_ids] = a_tau
-                self.tau[-(mj_joint_num-tau_num):] = d_tau
+                self.tau = self.pd_control(all_target_q, q, pd_kps, all_target_dq, dq, pd_kds)  # Calc torques
                 data.ctrl = self.tau
 
                 # 跌到重置
