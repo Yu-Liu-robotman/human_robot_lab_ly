@@ -24,11 +24,11 @@ import torch
 
 
 class AMPLoader:
-    JOINT_POS_SIZE = 11
+    JOINT_POS_SIZE = 23
 
-    JOINT_VEL_SIZE = 11
+    JOINT_VEL_SIZE = 23
 
-    END_EFFECTOR_POS_SIZE = 6
+    END_EFFECTOR_POS_SIZE = 12
 
     JOINT_POSE_START_IDX = 0
     JOINT_POSE_END_IDX = JOINT_POSE_START_IDX + JOINT_POS_SIZE
@@ -72,14 +72,19 @@ class AMPLoader:
                  # 腰部D32不动， 髋关节hip roll, ankle roll不动
                 # motion_data = np.array(motion_json["Frames"])
                 motion_data1 = np.array(motion_json["Frames"])
-                motion_data = motion_data1[:, [0, 1, 2, 3, #4, 5, 
-                                               6, 7, 8, 9, #10, 11,
+                motion_data = motion_data1[:, [0, 1, 2, 3, 4, 5, 
+                                               6, 7, 8, 9, 10, 11,
                                                12, 13, 14,
+                                               15, 16, 17, 18,
+                                               22, 23, 24, 25,
                                                
-                                               29, 30, 31, 32, #33, 34, 
-                                               35, 36, 37, 38, #39, 40,
+                                               29, 30, 31, 32, 33, 34, 
+                                               35, 36, 37, 38, 39, 40,
                                                41, 42, 43,
+                                               44, 45, 46, 47,
+                                               51, 52, 53, 54,
                                                
+                                               58, 59, 60, 61, 62, 63,
                                                64, 65, 66, 67, 68, 69,
                                                ]]
                 # motion_data = motion_data1[:, [0, 2, 3, 5,
