@@ -6,3 +6,8 @@ logs
 run_bash.sh
 wandb
 humanoid/assets/t1pro/train_asset
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
