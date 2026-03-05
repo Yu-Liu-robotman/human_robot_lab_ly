@@ -71,11 +71,11 @@ def on_key_press(key):
 def keyboard_control(key):
     """."""
     if key == 'w':
-        cmd.vx = cmd.vx + 0.2
+        cmd.vx = cmd.vx + 0.1
         if cmd.vx > 1.5:
             cmd.vx = 1.5
     if key == 's':
-        cmd.vx = cmd.vx - 0.2
+        cmd.vx = cmd.vx - 0.1
         if cmd.vx < -0.6:
             cmd.vx = -0.6
     if key == 'a':
@@ -88,11 +88,11 @@ def keyboard_control(key):
             cmd.dyaw = 0.6
             
     if key == 'q':
-        cmd.vy = cmd.vy + 0.2
+        cmd.vy = cmd.vy + 0.1
         if cmd.vy > 0.6:
             cmd.vy = 0.6
     if key == 'e':
-        cmd.vy = cmd.vy - 0.2
+        cmd.vy = cmd.vy - 0.1
         if cmd.vy < -0.6:
             cmd.vy = -0.6
   
@@ -104,7 +104,7 @@ def keyboard_control(key):
     if key == 'f':
         global stand_flag
         stand_flag *= -1
-    print(cmd.dyaw)
+    print(cmd.vx, cmd.vy, cmd.dyaw)
 
 
 def quaternion_to_euler_array(quat):
@@ -334,14 +334,14 @@ class HumaRobotSimRos(Node):
         kps = [120., 250., 700., 350, 60., 150.,
             120., 250., 700., 350, 60., 150.,
             120., 250., 700.,
-            100, 100, 100, 100, 100, 100, 100,
-            100, 100, 100, 100, 100, 100, 100,
+            90, 90, 120, 75, 100, 100, 100,
+            90, 90, 120, 75, 100, 100, 100,
             ]
         kds = [ 5, 12.0, 40, 18, 3, 8,
                 5, 12.0, 40, 18, 3, 8,
                 5, 12.0, 40,
-                10, 10, 10, 10, 10, 10, 10,
-                10, 10, 10, 10, 10, 10, 10
+                5, 5, 7, 3.5, 10, 10, 10,
+                5, 5, 7, 3.5, 10, 10, 10
             ]
         tau_limit = [80, 100, 200, 150, 40, 80,
                     80, 100, 200, 150, 40, 80,
@@ -379,8 +379,8 @@ class HumaRobotSimRos(Node):
                 all_target_dq = np.zeros((mj_joint_num), dtype=np.double)
                 
                 all_target_q = np.zeros((mj_joint_num), dtype=np.double)
-                all_target_q += self.all_default_joint_pos
                 all_target_q[dof_ids] = target_q
+                all_target_q += self.all_default_joint_pos
                 # Generate PD control
                 self.tau = self.pd_control(all_target_q, q, pd_kps, all_target_dq, dq, pd_kds)  # Calc torques
                 data.ctrl = self.tau
