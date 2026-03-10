@@ -3,7 +3,7 @@ from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
 
 import humanoid.mdp as mdp
-from humanoid.assets.t1pro import T1PRO_Lpd
+from humanoid.assets.t1pro import T1PRO
 from humanoid.envs.base.base_env_config import (  # noqa:F401
     BaseAgentCfg,
     BaseEnvCfg,
@@ -27,8 +27,8 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
 
 @configclass
 class T1proRewardCfg(RewardCfg):
-    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_yaw_frame_exp, weight=1.0, params={"std": 0.25})
-    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_world_exp, weight=1.0, params={"std": 0.25})
+    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_yaw_frame_exp, weight=2.0, params={"std": 0.25})
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_world_exp, weight=2.0, params={"std": 0.25})
     ang_vel_xy_l2 = RewTerm(func=mdp.mjlab_body_angular_velocity_penalty, weight=-0.05,  params={"asset_cfg": SceneEntityCfg("robot", body_names=".*torso_pitch.*")},)
     energy = RewTerm(func=mdp.energy, weight=-1e-3)
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
@@ -95,7 +95,7 @@ class T1proRewardCfg(RewardCfg):
         weight=-0.15,
         params={
             "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[".*_hip_yaw.*", ".*_hip_roll.*",  ".*_shoulder_pitch.*", ".*_elbow.*"]
+                "robot", joint_names=[ ".*_hip_roll.*",  ".*_shoulder_pitch.*", ".*_elbow.*"]
             )
         },
     )
@@ -111,7 +111,7 @@ class T1proRewardCfg(RewardCfg):
     joint_deviation_legs = RewTerm(
         func=mdp.joint_deviation_l1,
         weight=-0.02,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_pitch.*", ".*_knee.*", ".*_ankle.*"])},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw.*", ".*_hip_pitch.*", ".*_knee.*", ".*_ankle.*"])},
     )
     ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0005)
     ankle_action = RewTerm(func=mdp.ankle_action, weight=-0.001)
@@ -132,12 +132,16 @@ class T1proFlatEnvCfg(BaseEnvCfg):
     def __post_init__(self):
         super().__post_init__()
         self.scene.height_scanner.prim_body_name = "torso_pitch_link"
-        self.scene.robot = T1PRO_Lpd
+        self.scene.robot = T1PRO
         self.scene.terrain_type = "plane"
         # self.scene.terrain_generator = GRAVEL_TERRAINS_CFG
         self.robot.terminate_contacts_body_names = [".*torso_pitch.*"]
         self.robot.feet_body_names = [".*ankle_pitch.*"]
         self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = [".*torso_pitch.*"]
+        self.commands.ranges.lin_vel_x = (0, 1.0)
+        self.commands.ranges.lin_vel_y = (0.0, 0.0)
+        self.commands.ranges.ang_vel_z = (-1.57, 1.57)
+        self.commands.ranges.heading_command = False
 
 
 @configclass
@@ -188,28 +192,18 @@ class T1proFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     # amp parameter
     amp_reward_coef = 0.3
     amp_motion_files = [
-                        "humanoid/envs/t1pro_nophase_amp/datasets/0000_treadmill_norm_stageii.txt", 
-                        "humanoid/envs/t1pro_nophase_amp/datasets/0001_treadmill_fast_stageii.txt",
-                        "humanoid/envs/t1pro_nophase_amp/datasets/0002_treadmill_slow_stageii.txt",      
-                        "humanoid/envs/t1pro_nophase_amp/datasets/0005_normal_walk1_stageii.txt",
-                        "humanoid/envs/t1pro_nophase_amp/datasets/0006_normal_walk2_stageii.txt",     
-                        "humanoid/envs/t1pro_nophase_amp/datasets/heng0.2.txt",
-                        "humanoid/envs/t1pro_nophase_amp/datasets/heng0.4.txt",
-                        "humanoid/envs/t1pro_nophase_amp/datasets/left_45.txt",
-                        "humanoid/envs/t1pro_nophase_amp/datasets/right_45.txt",      
-                        "humanoid/envs/t1pro_nophase_amp/datasets/RightTurn01_stageii.txt",
-                        "humanoid/envs/t1pro_nophase_amp/datasets/tui0.2.txt",
-                        "humanoid/envs/t1pro_nophase_amp/datasets/turn_left.txt",
-                        "humanoid/envs/t1pro_nophase_amp/datasets/turn_right.txt", 
-                        "humanoid/envs/t1pro_nophase_amp/datasets/WalkInClockwiseCircle01_stageii.txt",
-                        "humanoid/envs/t1pro_nophase_amp/datasets/walking_fast02_stageii.txt",      
-                        "humanoid/envs/t1pro_nophase_amp/datasets/walking_fast06_stageii.txt",
-                        "humanoid/envs/t1pro_nophase_amp/datasets/walking_slow01_stageii.txt",     
-                        "humanoid/envs/t1pro_nophase_amp/datasets/walking_slow03_stageii.txt",
-                        "humanoid/envs/t1pro_nophase_amp/datasets/WalkingStraightBackwards01_stageii.txt",
-                        "humanoid/envs/t1pro_nophase_amp/datasets/WalkingStraightBackwards08_stageii.txt", 
-                        "humanoid/envs/t1pro_nophase_amp/datasets/zhizou0.1.txt",      
-                        "humanoid/envs/t1pro_nophase_amp/datasets/zhizou0.2.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/output_原地旋转-0.2.txt", 
+                        "humanoid/envs/t1pro_23dof_amp/datasets/output_原地旋转-0.4.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/output_原地旋转-0.6.txt",      
+                        "humanoid/envs/t1pro_23dof_amp/datasets/output_原地旋转0.2.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/output_原地旋转0.4.txt",     
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/output_原地旋转0.6.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/output_原地踏步.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/stand.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/0007_Walking001_stageii.txt",      
+                        "humanoid/envs/t1pro_23dof_amp/datasets/0007_normal_walk3_stageii.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/0002_treadmill_slow_stageii.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/0000_treadmill_norm_stageii.txt",
                         ]
     amp_num_preload_transitions = 200000
     amp_task_reward_lerp = 0.6

@@ -125,7 +125,7 @@ class T1proRewardCfg(RewardCfg):
 
 @configclass
 class T1proFlatEnvCfg(BaseEnvCfg):
-    amp_motion_files_display = ["/home/ubuntu/data/dateset/walk_tk/zhizou0.2.txt"]
+    amp_motion_files_display = ["/home/ubuntu/data/dateset/walk_forward/0000_treadmill_norm_stageii.txt"]
     rl_version = 2.0
     experiment_name: str = "t1pro_nophase_amp"
     reward = T1proRewardCfg()
