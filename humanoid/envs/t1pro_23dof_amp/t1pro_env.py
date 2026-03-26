@@ -16,8 +16,7 @@ from scipy.spatial.transform import Rotation
 
 from humanoid.envs.t1pro_23dof_amp.t1pro_config import T1proFlatEnvCfg
 from humanoid.utils.env_utils.scene import SceneCfg
-from rsl_rl.env import VecEnv
-from rsl_rl.utils import AMPLoaderDisplay
+from humanoid.envs.base.base_env import BaseEnv
 import isaaclab.utils.math as math_utils
 
 @torch.jit.script
@@ -53,7 +52,7 @@ def get_euler_xyz_tensor(quat):
     euler_xyz[euler_xyz > np.pi] -= 2 * np.pi
     return euler_xyz
 
-class T1proEnv(VecEnv):
+class T1proEnv(BaseEnv):
     def __init__(
         self,
         cfg: (
