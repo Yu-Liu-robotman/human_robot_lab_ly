@@ -612,7 +612,7 @@ def mjlab_soft_landing(
       active = (total_command > command_threshold).float()
     return reward * active
 
-def leglab_feet_air_time_positive_biped(env: BaseEnv, threshold: float, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+def leglab_feet_air_time_positive_biped(env: BaseEnv, sensor_cfg: SceneEntityCfg, threshold: float, command_threshold: float = 0.1) -> torch.Tensor:
     """Reward long steps taken by the feet for bipeds.
 
     This function rewards the agent for taking steps up to a specified threshold and also keep one foot at
@@ -630,7 +630,12 @@ def leglab_feet_air_time_positive_biped(env: BaseEnv, threshold: float, sensor_c
     reward = torch.min(torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0), dim=1)[0]
     reward = torch.clamp(reward, max=threshold)
     # no reward for zero command
-    reward *= torch.norm(env.command_generator.command[:, :2], dim=1) > 0.1
+    command = env.command_generator.command
+    linear_norm = torch.norm(command[:, :2], dim=1)
+    angular_norm = torch.abs(command[:, 2])
+    total_command = linear_norm + angular_norm
+    active = (total_command > command_threshold).float()
+    reward *= active
     return reward
 
 def leglab_feet_clearance(
@@ -642,13 +647,19 @@ def leglab_feet_clearance(
     foot_velocity_tanh = torch.tanh(tanh_mult * torch.norm(asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2], dim=2))
     reward = foot_z_target_error * foot_velocity_tanh
     return torch.exp(-torch.sum(reward, dim=1) / std)
+
 def leglab_stand_still_joint_deviation_l1(
     env: BaseEnv, command_threshold: float = 0.1, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
 ) -> torch.Tensor:
     """Penalize offsets from the default joint positions when the command is very small."""
     command = env.command_generator.command
     # Penalize motion when command is nearly zero.
-    return joint_deviation_l1(env, asset_cfg) * (torch.norm(command[:, :2], dim=1) < command_threshold)
+    command = env.command_generator.command
+    linear_norm = torch.norm(command[:, :2], dim=1)
+    angular_norm = torch.abs(command[:, 2])
+    total_command = linear_norm + angular_norm
+    active = (total_command < command_threshold).float()
+    return joint_deviation_l1(env, asset_cfg) * active
 
 def double_support_Penalize(
   env: BaseEnv, sensor_cfg: SceneEntityCfg, command_threshold: float = 0.01,
@@ -664,3 +675,4 @@ def double_support_Penalize(
   active = (total_command > command_threshold).float()
   cost = (total_command * double_support_mask.float()).clamp(min=0.0, max=1.0) * active
   return cost
+
