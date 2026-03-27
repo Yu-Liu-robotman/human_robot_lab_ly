@@ -291,6 +291,10 @@ class T1proEnv(BaseEnv):
         self.obs_index_imu_torso_linearacc = -1
         self.obs_index_phase = -1
         self.rl_version = self.cfg.rl_version
+        self.left_contact_time  = torch.zeros(self.num_envs, device=self.device)
+        self.right_contact_time = torch.zeros(self.num_envs, device=self.device)
+        self.ds_time            = torch.zeros(self.num_envs, device=self.device)
+        self.last_contact_mask  = torch.zeros(self.num_envs, 2, device=self.device)
         self.init_obs_buffer()
 
     def compute_current_observations(self):
@@ -352,7 +356,10 @@ class T1proEnv(BaseEnv):
     def reset(self, env_ids):
         if len(env_ids) == 0:
             return
-
+        self.left_contact_time[env_ids]  = 0.0
+        self.right_contact_time[env_ids] = 0.0
+        self.ds_time[env_ids]            = 0.0
+        self.last_contact_mask[env_ids]  = 0.0
         self.extras["log"] = dict()
         if self.cfg.scene.terrain_generator is not None:
             if self.cfg.scene.terrain_generator.curriculum:

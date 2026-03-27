@@ -43,13 +43,13 @@ def ang_vel_xy_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robo
 
 def energy(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
-    reward = torch.norm(torch.abs(asset.data.applied_torque * asset.data.joint_vel), dim=-1)
+    reward = torch.norm(torch.abs(asset.data.applied_torque[:, env.dof_ids] * asset.data.joint_vel[:, env.dof_ids]), dim=-1)
     return reward
 
 
 def joint_acc_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
-    return torch.sum(torch.square(asset.data.joint_acc[:, asset_cfg.joint_ids]), dim=1)
+    return torch.sum(torch.square(asset.data.joint_acc[:, env.dof_ids]), dim=1)
 
 
 def action_rate_l2(env: BaseEnv) -> torch.Tensor:
@@ -676,3 +676,103 @@ def double_support_Penalize(
   cost = (total_command * double_support_mask.float()).clamp(min=0.0, max=1.0) * active
   return cost
 
+def double_support_penalize(
+    env: BaseEnv,
+    sensor_cfg: SceneEntityCfg,
+    command_threshold: float = 0.01,
+    max_ds_time: float = 0.08,   
+    force_threshold: float = 1.0,
+) -> torch.Tensor:
+    """
+    Penalize long double-support duration using time instead of steps.
+    """
+    dt = env.step_dt  
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    contact_mask = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2] > force_threshold
+    double_support_mask = (torch.sum(contact_mask, dim=1) == 2)
+    if not hasattr(env, "ds_time"):
+        env.ds_time = torch.zeros(env.num_envs, device=env.device)
+    env.ds_time = env.ds_time * double_support_mask + double_support_mask.float() * dt
+    command = env.command_generator.command
+    linear_norm = torch.norm(command[:, :2], dim=1)
+    angular_norm = torch.abs(command[:, 2])
+    total_command = linear_norm + angular_norm
+    active = total_command > command_threshold
+    long_ds = env.ds_time > max_ds_time
+
+    cost = long_ds.float() * total_command * active.float()
+    cost = cost.clamp(0.0, 1.0)
+    return cost
+
+def gait_reward(
+    env: BaseEnv,
+    sensor_cfg: SceneEntityCfg,
+    command_threshold: float = 0.05,
+    max_single_time: float = 0.4,   
+    max_ds_time: float = 0.1, 
+    w_drag: float = 1.0,
+    w_ds: float = 1.0,
+    w_jitter: float = 0.3,
+    w_sym: float = 0.5,
+    force_threshold: float = 1.0,
+) -> torch.Tensor:
+    """
+    Phase-free gait reward:
+    - symmetry (左右交替)
+    - anti-drag (防拖步)
+    - anti-jitter (防抖腿)
+    - anti-long double support (防粘地)
+    """
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    dt = env.step_dt
+    contact_mask = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2] > force_threshold
+    left_contact  = contact_mask[:, 0]
+    right_contact = contact_mask[:, 1]
+    if not hasattr(env, "left_contact_time"):
+        env.left_contact_time  = torch.zeros(env.num_envs, device=env.device)
+        env.right_contact_time = torch.zeros(env.num_envs, device=env.device)
+        env.ds_time            = torch.zeros(env.num_envs, device=env.device)
+        env.last_contact_mask  = torch.zeros(env.num_envs, 2, device=env.device)
+    env.left_contact_time  = env.left_contact_time  * left_contact  + left_contact.float()  * dt
+    env.right_contact_time = env.right_contact_time * right_contact + right_contact.float() * dt
+    double_support = left_contact & right_contact
+    env.ds_time = env.ds_time * double_support + double_support.float() * dt
+    command = env.command_generator.command
+    lin = torch.norm(command[:, :2], dim=1)
+    ang = torch.abs(command[:, 2])
+    total_cmd = lin + ang
+    active = total_cmd > command_threshold
+    long_left  = env.left_contact_time  > max_single_time
+    long_right = env.right_contact_time > max_single_time
+    drag_penalty = (long_left | long_right).float()
+    long_ds = env.ds_time > max_ds_time
+    ds_penalty = long_ds.float()
+    current_mask = torch.stack([left_contact, right_contact], dim=1).float()
+    contact_change = torch.abs(current_mask - env.last_contact_mask).sum(dim=1)
+    jitter_penalty = (contact_change > 0).float()
+    env.last_contact_mask = current_mask.clone()
+    symmetry_penalty = torch.abs(env.left_contact_time - env.right_contact_time)
+    reward = (
+        - w_drag   * drag_penalty
+        - w_ds     * ds_penalty
+        - w_jitter * jitter_penalty
+        - w_sym    * symmetry_penalty
+    )
+    reward = reward * active.float()
+    return reward
+
+def joint_pos_limits(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Penalize joint positions if they cross the soft limits.
+
+    This is computed as a sum of the absolute value of the difference between the joint position and the soft limits.
+    """
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+    # compute out of limits constraints
+    out_of_limits = -(
+        asset.data.joint_pos[:, env.dof_ids] - asset.data.soft_joint_pos_limits[:, env.dof_ids, 0]
+    ).clip(max=0.0)
+    out_of_limits += (
+        asset.data.joint_pos[:, env.dof_ids] - asset.data.soft_joint_pos_limits[:, env.dof_ids, 1]
+    ).clip(min=0.0)
+    return torch.sum(out_of_limits, dim=1)
