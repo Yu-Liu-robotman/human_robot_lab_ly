@@ -297,7 +297,7 @@ class T1proEnv(BaseEnv):
         robot = self.robot
         net_contact_forces = self.contact_sensor.data.net_forces_w
         contact_mask = net_contact_forces[:, self.feet_cfg.body_ids, 2] > 5.0
-        # projected_gravity = robot.data.projected_gravity_b
+        projected_gravity = robot.data.projected_gravity_b
         command = self.command_generator.command
         joint_pos = robot.data.joint_pos - robot.data.default_joint_pos
         joint_vel = robot.data.joint_vel - robot.data.default_joint_vel
@@ -311,7 +311,7 @@ class T1proEnv(BaseEnv):
                 dq  * self.obs_scales.joint_vel,
                 action * self.obs_scales.actions,
                 self.base_ang_vel * self.obs_scales.ang_vel,
-                self.base_euler_xyz * self.obs_scales.projected_gravity,
+                projected_gravity * self.obs_scales.projected_gravity,
             ],
             dim=-1,
         )

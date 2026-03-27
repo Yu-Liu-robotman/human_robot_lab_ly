@@ -77,7 +77,7 @@ def fly(env: BaseEnv, threshold: float, sensor_cfg: SceneEntityCfg) -> torch.Ten
 
 def flat_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
-    return torch.sum(torch.square(env.base_euler_xyz[:, :2]), dim=1)
+    return torch.sum(torch.square(asset.data.projected_gravity_b[:, :2]), dim=1)
 
 
 def is_terminated(env: BaseEnv) -> torch.Tensor:
@@ -126,10 +126,7 @@ def body_force(
 def joint_deviation_l1(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
     angle = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
-    # zero_flag = (
-    #     torch.norm(env.command_generator.command[:, :2], dim=1) + torch.abs(env.command_generator.command[:, 2])
-    # ) < 0.1
-    return torch.sum(torch.abs(angle), dim=1) #* zero_flag
+    return torch.sum(torch.abs(angle), dim=1) 
 
 
 def body_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
@@ -614,3 +611,56 @@ def mjlab_soft_landing(
       total_command = linear_norm + angular_norm
       active = (total_command > command_threshold).float()
     return reward * active
+
+def leglab_feet_air_time_positive_biped(env: BaseEnv, threshold: float, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Reward long steps taken by the feet for bipeds.
+
+    This function rewards the agent for taking steps up to a specified threshold and also keep one foot at
+    a time in the air.
+
+    If the commands are small (i.e. the agent is not supposed to take a step), then the reward is zero.
+    """
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    # compute the reward
+    air_time = contact_sensor.data.current_air_time[:, sensor_cfg.body_ids]
+    contact_time = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids]
+    in_contact = contact_time > 0.0
+    in_mode_time = torch.where(in_contact, contact_time, air_time)
+    single_stance = torch.sum(in_contact.int(), dim=1) == 1
+    reward = torch.min(torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0), dim=1)[0]
+    reward = torch.clamp(reward, max=threshold)
+    # no reward for zero command
+    reward *= torch.norm(env.command_generator.command[:, :2], dim=1) > 0.1
+    return reward
+
+def leglab_feet_clearance(
+    env: BaseEnv, asset_cfg: SceneEntityCfg, target_height: float, std: float, tanh_mult: float
+) -> torch.Tensor:
+    """Reward the swinging feet for clearing a specified height off the ground"""
+    asset: Articulation = env.scene[asset_cfg.name]
+    foot_z_target_error = torch.square(asset.data.body_pos_w[:, asset_cfg.body_ids, 2] - target_height)
+    foot_velocity_tanh = torch.tanh(tanh_mult * torch.norm(asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2], dim=2))
+    reward = foot_z_target_error * foot_velocity_tanh
+    return torch.exp(-torch.sum(reward, dim=1) / std)
+def leglab_stand_still_joint_deviation_l1(
+    env: BaseEnv, command_threshold: float = 0.1, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize offsets from the default joint positions when the command is very small."""
+    command = env.command_generator.command
+    # Penalize motion when command is nearly zero.
+    return joint_deviation_l1(env, asset_cfg) * (torch.norm(command[:, :2], dim=1) < command_threshold)
+
+def double_support_Penalize(
+  env: BaseEnv, sensor_cfg: SceneEntityCfg, command_threshold: float = 0.01,
+) -> torch.Tensor:
+  """Penalize foot sliding (xy velocity while in contact)."""
+  contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+  contact_mask = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2] > 1.0
+  command = env.command_generator.command
+  double_support_mask = torch.sum(contact_mask, dim=1) == 2
+  linear_norm = torch.norm(command[:, :2], dim=1)
+  angular_norm = torch.abs(command[:, 2])
+  total_command = linear_norm + angular_norm
+  active = (total_command > command_threshold).float()
+  cost = (total_command * double_support_mask.float()).clamp(min=0.0, max=1.0) * active
+  return cost

@@ -62,7 +62,7 @@ def on_key_press(key):
     try:
         # print(key)
         ch = key.char.lower()
-        if ch not in 'wsadkfqe3456789':
+        if ch not in '0123456789':
             return
         keyboard_control(ch)
     except AttributeError:
@@ -70,33 +70,33 @@ def on_key_press(key):
 
 def keyboard_control(key):
     """."""
-    if key == 'w':
+    if key == '8':
         cmd.vx = cmd.vx + 0.1
         if cmd.vx > 1.5:
             cmd.vx = 1.5
-    if key == 's':
+    if key == '2':
         cmd.vx = cmd.vx - 0.1
         if cmd.vx < -0.6:
             cmd.vx = -0.6
-    if key == 'a':
+    if key == '4':
         cmd.dyaw = cmd.dyaw - 0.05
         if cmd.dyaw < -0.6:
             cmd.dyaw = -0.6
-    if key == 'd':
+    if key == '6':
         cmd.dyaw = cmd.dyaw + 0.05
         if cmd.dyaw > 0.6:
             cmd.dyaw = 0.6
             
-    if key == 'q':
+    if key == '7':
         cmd.vy = cmd.vy + 0.1
         if cmd.vy > 0.6:
             cmd.vy = 0.6
-    if key == 'e':
+    if key == '9':
         cmd.vy = cmd.vy - 0.1
         if cmd.vy < -0.6:
             cmd.vy = -0.6
   
-    if key == 'k':
+    if key == '0':
         cmd.vx = 0
         cmd.vy = 0
         cmd.dyaw = 0
@@ -324,8 +324,8 @@ class HumaRobotSimRos(Node):
         self.default_joint_pos = param['default_joint_pos']
         print("self.default_joint_pos:", self.default_joint_pos)
         self.all_default_joint_pos = [
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.109, 0.2, 0.0, 0.091,
+            0.0, 0.0, 0.109, 0.2, 0.0, 0.091,
             0.0, 0.0, 0.0,
             -0.1, 0.2, 0, -1.2, 0, 0, 0,
             -0.1, 0.2, 0, -1.2, 0, 0, 0
@@ -469,7 +469,24 @@ class HumaRobotSimRos(Node):
 
             # 逆旋转 (等价于 R.T @ v)
             return R.T @ v
-    
+    def quat_apply_inverse(self, q: np.ndarray, v: np.ndarray) -> np.ndarray:
+        """
+        Rotate a vector by the inverse of a quaternion.
+
+        Args:
+            q (np.ndarray): Quaternion (x, y, z, w) format.
+            v (np.ndarray): Vector to rotate.
+
+        Returns:
+            np.ndarray: Rotated vector.
+        """
+        q_w = q[-1]
+        q_vec = q[:3]
+        a = v * (2.0 * q_w**2 - 1.0)
+        b = np.cross(q_vec, v) * q_w * 2.0
+        c = q_vec * np.dot(q_vec, v) * 2.0
+
+        return a - b + c
     def rl_policy_forward(self, param, policy, q, dq, waist_orient_quat, waist_omega, torque_foot, force_foot, lin_vel):
         """."""
         obs = np.zeros([1, param['num_single_obs']], dtype=np.float32)
@@ -497,13 +514,15 @@ class HumaRobotSimRos(Node):
                cmd.vy * param['obs_scales_lin_vel'], 
                cmd.dyaw * param['obs_scales_ang_vel']]
             obs[0, param['obs_index_cmd'] : param['obs_index_cmd'] + len(command)] = command
+        
         obs[0, param['obs_index_q'] : param['obs_index_q'] + len(q)] = q * param['obs_scales_dof_pos']
         obs[0, param['obs_index_qd'] : param['obs_index_qd'] + len(dq)] = dq * param['obs_scales_dof_vel']
         obs[0, param['obs_index_action'] : param['obs_index_action'] + len(self.action)] = self.action
         obs[0, param['obs_index_imu_waist_angvel'] : param['obs_index_imu_waist_angvel'] + len(waist_omega)] =\
             waist_omega * param['obs_scales_imu_waist_angvel']
         obs[0, param['obs_index_imu_waist_orientation'] : param['obs_index_imu_waist_orientation'] + len(eu_ang)] =\
-            eu_ang * param['obs_scales_imu_waist_orientation']
+            self.quat_apply_inverse(
+                    waist_orient_quat, np.array([0, 0, -1])) * param['obs_scales_imu_waist_orientation']
 
         if param['has_obs_torque']:
             obs[0, param['obs_index_torque'] : param['obs_index_torque'] + len(self.obs_torques)] =\

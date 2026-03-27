@@ -135,7 +135,7 @@ class BaseEnvCfg:
                 mode="startup",
                 params={
                     "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-                    "mass_distribution_params": (-5.0, 5.0),
+                    "mass_distribution_params": (-0.5, 0.5),
                     "operation": "add",
                 },
             ),
@@ -158,7 +158,7 @@ class BaseEnvCfg:
                 func=mdp.reset_joints_by_scale,
                 mode="reset",
                 params={
-                    "position_range": (0.5, 1.5),
+                    "position_range": (0.5, 2.5),
                     "velocity_range": (0.0, 0.0),
                 },
             ),

@@ -27,8 +27,8 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
 
 @configclass
 class T1proRewardCfg(RewardCfg):
-    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_yaw_frame_exp, weight=2.0, params={"std": 0.25})
-    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_world_exp, weight=2.0, params={"std": 0.25})
+    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_yaw_frame_exp, weight=1.0, params={"std": 0.5})
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_world_exp, weight=1.0, params={"std": 0.5})
     ang_vel_xy_l2 = RewTerm(func=mdp.mjlab_body_angular_velocity_penalty, weight=-0.05,  params={"asset_cfg": SceneEntityCfg("robot", body_names=".*torso_pitch.*")},)
     energy = RewTerm(func=mdp.energy, weight=-1e-3)
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
@@ -54,12 +54,31 @@ class T1proRewardCfg(RewardCfg):
     #     weight=0.15,
     #     params={"sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_pitch.*"), "threshold": 0.4},
     # )
-    foot_clearance = RewTerm(func=mdp.mjlab_feet_clearance,weight=-4.0,
-      params={
-        "target_height": 0.105,
-        "command_threshold": 0.1,
-        "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_pitch.*"),
-      },)
+    # foot_clearance = RewTerm(func=mdp.mjlab_feet_clearance,weight=-4.0,
+    #   params={
+    #     "target_height": 0.105,
+    #     "command_threshold": 0.1,
+    #     "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_pitch.*"),
+    #   },)
+    feet_clearance = RewTerm(
+        func=mdp.leglab_feet_clearance, 
+        weight=1.0,
+        params={
+            "std": 0.05,
+            "tanh_mult": 2.0,
+            "target_height": 0.12,
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_pitch.*"),
+        },
+    )
+
+    feet_air_time = RewTerm(
+        func=mdp.leglab_feet_air_time_positive_biped,
+        weight=0.75,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_pitch.*"),
+            "threshold": 0.4,
+        },
+    )
     foot_slip = RewTerm(
         func=mdp.mjlab_feet_slip,
         weight=-0.5,
@@ -119,33 +138,86 @@ class T1proRewardCfg(RewardCfg):
     # hip_yaw_action = RewTerm(func=mdp.hip_yaw_action, weight=-1.0)
     # torso_roll_action = RewTerm(func=mdp.torso_roll_action, weight=-1.0)
     # torso_yaw_action = RewTerm(func=mdp.torso_yaw_action, weight=-1.0)
-    
-    
+    stand_still_joint_deviation_l1 = RewTerm(
+        func=mdp.leglab_stand_still_joint_deviation_l1,
+        weight=-0.5,
+        params={
+            "command_threshold": 0.1,
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
+        },
+    )
+    joint_torques_l2 = RewTerm(
+        func=mdp.joint_torques_l2,
+        weight=-2.0e-6,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_.*", ".*_knee_joint"])},
+    )
+    # double_support = RewTerm(
+    #     func=mdp.double_support_Penalize,
+    #     weight=-0.5,
+    #     params={
+    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_pitch.*"),
+    #         "command_threshold": 0.1,
+    #     },
+    # )
 
 
 @configclass
 class T1proFlatEnvCfg(BaseEnvCfg):
     rl_version = 2.0
-    experiment_name: str = "t1pro_23dof_amp_flat"
+    experiment_name: str = "t1pro_23dof_flat"
     reward = T1proRewardCfg()
     rand_dof_nums = 6
     def __post_init__(self):
         super().__post_init__()
-        self.scene.height_scanner.prim_body_name = "torso_pitch_link"
+        self.scene.height_scanner.prim_body_name = "base_link"
         self.scene.robot = T1PRO
-        self.scene.terrain_type = "plane"
-        # self.scene.terrain_generator = GRAVEL_TERRAINS_CFG
+        # self.scene.terrain_type = "plane"
+        self.scene.terrain_type = "generator"
+        self.scene.terrain_generator = GRAVEL_TERRAINS_CFG
         self.robot.terminate_contacts_body_names = [".*torso_pitch.*"]
         self.robot.feet_body_names = [".*ankle_pitch.*"]
-        self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = [".*torso_pitch.*"]
-        self.commands.ranges.lin_vel_x = (0, 1.0)
-        self.commands.ranges.lin_vel_y = (0.0, 0.0)
+        self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = ["base_link"]
+        self.commands.ranges.lin_vel_x = (-0.6, 1.0)
+        self.commands.ranges.lin_vel_y = (-0.5, 0.5)
         self.commands.ranges.ang_vel_z = (-1.57, 1.57)
         self.commands.ranges.heading_command = False
 
+@configclass
+class T1proFlatAgentCfg(BaseAgentCfg):
+    experiment_name: str = "t1pro_23dof_flat"
+    wandb_project: str = "t1pro_23dof_flat"
 
 @configclass
-class T1proFlatAgentCfg(RslRlOnPolicyRunnerCfg):
+class T1proRoughEnvCfg(T1proFlatEnvCfg):
+    experiment_name: str = "t1pro_23dof_rough"
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.height_scanner.enable_height_scan = True
+        self.scene.terrain_generator = ROUGH_TERRAINS_CFG
+        self.robot.actor_obs_history_length = 1
+        self.robot.critic_obs_history_length = 1
+        # self.reward.feet_air_time.weight = 0.25
+        self.reward.track_lin_vel_xy_exp.weight = 1.5
+        self.reward.track_ang_vel_z_exp.weight = 1.5
+        # self.reward.lin_vel_z_l2.weight = -0.25
+@configclass
+class T1proRoughAgentCfg(BaseAgentCfg):
+    experiment_name: str = "t1pro_23dof_rough"
+    wandb_project: str = "t1pro_23dof_rough"
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.policy.class_name = "ActorCriticRecurrent"
+        self.policy.actor_hidden_dims = [256, 256, 128]
+        self.policy.critic_hidden_dims = [256, 256, 128]
+        self.policy.rnn_hidden_size = 256
+        self.policy.rnn_num_layers = 1
+        self.policy.rnn_type = "lstm"
+        
+class T1proAmpFlatEnvCfg(T1proFlatEnvCfg):
+    experiment_name: str = "t1pro_23dof_amp_flat"
+@configclass
+class T1proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     seed = 42
     device = "cuda:0"
     num_steps_per_env = 24
@@ -160,7 +232,7 @@ class T1proFlatAgentCfg(RslRlOnPolicyRunnerCfg):
         activation="elu",
     )
     algorithm = RslRlPpoAlgorithmCfg(
-        class_name="AMPPPO",
+        class_name= "PPO", #"AMPPPO",
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
@@ -179,7 +251,7 @@ class T1proFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     )
     clip_actions = None
     save_interval = 100
-    runner_class_name = "AmpOnPolicyRunner"
+    runner_class_name = "OnPolicyRunner" # "AmpOnPolicyRunner"
     experiment_name = "t1pro_23dof_amp_flat"
     run_name = ""
     logger = "tensorboard"
@@ -211,31 +283,4 @@ class T1proFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     min_normalized_std = [0.05] * 23
 
 
-@configclass
-class T1proRoughEnvCfg(T1proFlatEnvCfg):
 
-    def __post_init__(self):
-        super().__post_init__()
-        self.scene.height_scanner.enable_height_scan = True
-        self.scene.terrain_generator = ROUGH_TERRAINS_CFG
-        self.robot.actor_obs_history_length = 1
-        self.robot.critic_obs_history_length = 1
-        # self.reward.feet_air_time.weight = 0.25
-        self.reward.track_lin_vel_xy_exp.weight = 1.5
-        self.reward.track_ang_vel_z_exp.weight = 1.5
-        # self.reward.lin_vel_z_l2.weight = -0.25
-
-
-@configclass
-class T1proRoughAgentCfg(BaseAgentCfg):
-    experiment_name: str = "t1pro_23dof_amp_rough"
-    wandb_project: str = "t1pro_23dof_amp_rough"
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.policy.class_name = "ActorCriticRecurrent"
-        self.policy.actor_hidden_dims = [256, 256, 128]
-        self.policy.critic_hidden_dims = [256, 256, 128]
-        self.policy.rnn_hidden_size = 256
-        self.policy.rnn_num_layers = 1
-        self.policy.rnn_type = "lstm"
