@@ -179,7 +179,6 @@ class BaseEnvCfg:
 
 @configclass
 class BaseAgentCfg(RslRlOnPolicyRunnerCfg):
-    runner_class_name = "OnPolicyRunner"
     seed = 42
     device = "cuda:0"
     num_steps_per_env = 24
@@ -194,7 +193,7 @@ class BaseAgentCfg(RslRlOnPolicyRunnerCfg):
         activation="elu",
     )
     algorithm = RslRlPpoAlgorithmCfg(
-        class_name="PPO",
+        class_name= "PPO", #"AMPPPO",
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
@@ -213,11 +212,12 @@ class BaseAgentCfg(RslRlOnPolicyRunnerCfg):
     )
     clip_actions = None
     save_interval = 100
-    experiment_name = ""
+    runner_class_name = "OnPolicyRunner" # "AmpOnPolicyRunner"
+    experiment_name = "t1pro_flat"
     run_name = ""
-    logger = "wandb"
-    neptune_project = "leggedlab"
-    wandb_project = "leggedlab"
+    logger = "tensorboard"
+    neptune_project = "t1pro_flat"
+    wandb_project = "t1pro_flat"
     resume = False
     load_run = ".*"
     load_checkpoint = "model_.*.pt"
