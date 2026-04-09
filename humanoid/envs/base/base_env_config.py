@@ -145,12 +145,12 @@ class BaseEnvCfg:
                 params={
                     "pose_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5), "yaw": (-3.14, 3.14)},
                     "velocity_range": {
-                        "x": (0.0, 0.0),
-                        "y": (0.0, 0.0),
-                        "z": (0.0, 0.0),
-                        "roll": (0.0, 0.0),
-                        "pitch": (0.0, 0.0),
-                        "yaw": (0.0, 0.0),
+                        "x": (-0.5, 0.5),
+                        "y": (-0.5, 0.5),
+                        "z": (-0.5, 0.5),
+                        "roll": (-0.5, 0.5),
+                        "pitch": (-0.5, 0.5),
+                        "yaw": (-0.5, 0.5),
                     },
                 },
             ),
@@ -167,6 +167,28 @@ class BaseEnvCfg:
                 mode="interval",
                 interval_range_s=(10.0, 15.0),
                 params={"velocity_range": {"x": (-1.0, 1.0), "y": (-1.0, 1.0)}},
+            ),
+            scale_joint_pd = EventTerm(
+                func=mdp.randomize_actuator_gains,
+                mode="startup",
+                params={
+                    "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+                    "stiffness_distribution_params": (0.8, 1.2),  # ±20% Kp
+                    "damping_distribution_params": (0.8, 1.2),    # ±20% Kd
+                    "operation": "scale",
+                    "distribution": "uniform",
+                },
+            ),
+            scale_joint_param = EventTerm(
+                func=mdp.randomize_joint_parameters,
+                mode="startup",
+                params={
+                    "asset_cfg": SceneEntityCfg("robot", joint_names=[".*"]),
+                    "friction_distribution_params": (0.8, 1.2),
+                    "armature_distribution_params": (0.8, 1.2),
+                    "operation": "scale",
+                    "distribution": "uniform",
+                },
             ),
         ),
         action_delay=ActionDelayCfg(enable=False, params={"max_delay": 5, "min_delay": 0}),

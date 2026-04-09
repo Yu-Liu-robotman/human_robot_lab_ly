@@ -776,3 +776,144 @@ def joint_pos_limits(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("r
         asset.data.joint_pos[:, env.dof_ids] - asset.data.soft_joint_pos_limits[:, env.dof_ids, 1]
     ).clip(min=0.0)
     return torch.sum(out_of_limits, dim=1)
+
+def dwaq_alive(env: BaseEnv) -> torch.Tensor:
+    """Reward for staying alive.
+    
+    A simple constant reward that encourages the robot to not terminate early.
+    Reference: DreamWaQ (HumanoidDreamWaq/legged_gym/envs/g1/g1_env.py)
+    """
+    return torch.ones(env.num_envs, device=env.device, dtype=torch.float)
+
+def dwaq_idle_when_commanded(
+    env: BaseEnv,
+    cmd_threshold: float = 0.2,
+    vel_threshold: float = 0.1,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize being idle when a velocity command is given.
+    
+    This reward function detects "lazy standing" behavior where the robot receives
+    a movement command but remains stationary. It returns 1.0 when the robot should
+    be moving but is not, enabling a negative weight penalty.
+    
+    Args:
+        env: Environment instance.
+        cmd_threshold: Minimum command magnitude to be considered "commanded to move".
+            Commands below this threshold are ignored (robot is allowed to stand).
+        vel_threshold: Maximum velocity magnitude to be considered "idle/stationary".
+            If actual velocity is below this, the robot is considered not moving.
+        asset_cfg: Robot configuration.
+    
+    Returns:
+        Tensor of shape (num_envs,) with values:
+        - 1.0 if commanded to move but idle (should be penalized)
+        - 0.0 otherwise (no penalty)
+    
+    Example:
+        idle_penalty = RewTerm(
+            func=mdp.idle_when_commanded,
+            weight=-2.0,
+            params={"cmd_threshold": 0.2, "vel_threshold": 0.1}
+        )
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    
+    # Get velocity command (xy components)
+    cmd_xy = env.command_generator.command[:, :2]
+    cmd_magnitude = torch.linalg.norm(cmd_xy, dim=-1)
+    
+    # Get actual root velocity in yaw frame (same as track_lin_vel_xy uses)
+    vel_yaw = math_utils.quat_apply_inverse(
+        math_utils.yaw_quat(asset.data.root_quat_w), asset.data.root_lin_vel_w[:, :3]
+    )
+    vel_magnitude = torch.linalg.norm(vel_yaw[:, :2], dim=-1)
+    
+    # Detect "commanded but idle" condition
+    is_commanded = cmd_magnitude > cmd_threshold  # Should be moving
+    is_idle = vel_magnitude < vel_threshold       # But not moving
+    
+    return (is_commanded & is_idle).float()
+
+def dwaq_idle_when_commanded_angle(
+    env: BaseEnv,
+    cmd_threshold: float = 0.2,
+    vel_threshold: float = 0.1,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize being idle when a velocity command is given.
+    
+    This reward function detects "lazy standing" behavior where the robot receives
+    a movement command but remains stationary. It returns 1.0 when the robot should
+    be moving but is not, enabling a negative weight penalty.
+    
+    Args:
+        env: Environment instance.
+        cmd_threshold: Minimum command magnitude to be considered "commanded to move".
+            Commands below this threshold are ignored (robot is allowed to stand).
+        vel_threshold: Maximum velocity magnitude to be considered "idle/stationary".
+            If actual velocity is below this, the robot is considered not moving.
+        asset_cfg: Robot configuration.
+    
+    Returns:
+        Tensor of shape (num_envs,) with values:
+        - 1.0 if commanded to move but idle (should be penalized)
+        - 0.0 otherwise (no penalty)
+    
+    Example:
+        idle_penalty = RewTerm(
+            func=mdp.idle_when_commanded,
+            weight=-2.0,
+            params={"cmd_threshold": 0.2, "vel_threshold": 0.1}
+        )
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    
+    # Get velocity command (xy components)
+    cmd_yaw = env.command_generator.command[:, 2]
+    cmd_magnitude = torch.abs(cmd_yaw)
+    
+    # Get actual root velocity in yaw frame (same as track_lin_vel_xy uses)
+    vel_yaw = asset.data.root_ang_vel_b[:, 2]
+    vel_magnitude = torch.abs(vel_yaw)
+    
+    # Detect "commanded but idle" condition
+    is_commanded = cmd_magnitude > cmd_threshold  # Should be moving
+    is_idle = vel_magnitude < vel_threshold       # But not moving
+    
+    return (is_commanded & is_idle).float()
+
+
+def dwaq_feet_swing_height(
+    env: BaseEnv, 
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    target_height: float = 0.08
+) -> torch.Tensor:
+    """Simple version: Penalize swing foot height deviation from fixed target.
+    
+    This is the original simple implementation that uses absolute z-coordinate.
+    Use feet_swing_height() for terrain-aware version.
+    
+    Args:
+        env: Environment.
+        sensor_cfg: Contact sensor configuration for feet.
+        asset_cfg: Robot configuration with body_ids for feet.
+        target_height: Target height for swing foot (default 0.08m).
+        
+    Reference: DreamWaQ _reward_feet_swing_height()
+    """
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    asset: Articulation = env.scene[asset_cfg.name]
+    
+    # Get contact status
+    net_contact_forces = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, :]
+    contact = torch.norm(net_contact_forces, dim=-1) > 1.0  # (num_envs, num_feet)
+    
+    # Get feet positions (z-coordinate)
+    feet_pos_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]  # (num_envs, num_feet)
+    
+    # Penalize height error only during swing phase (not in contact)
+    pos_error = torch.square(feet_pos_z - target_height) * (~contact).float()
+    
+    return torch.sum(pos_error, dim=-1)

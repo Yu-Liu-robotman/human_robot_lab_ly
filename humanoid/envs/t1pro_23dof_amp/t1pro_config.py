@@ -27,8 +27,8 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
 
 @configclass
 class T1proRewardCfg(RewardCfg):
-    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_yaw_frame_exp, weight=1.0, params={"std": 0.5})
-    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_world_exp, weight=1.0, params={"std": 0.5})
+    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_yaw_frame_exp, weight=2.0, params={"std": 0.5})
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_world_exp, weight=2.0, params={"std": 0.5})
     ang_vel_xy_l2 = RewTerm(func=mdp.mjlab_body_angular_velocity_penalty, weight=-0.05,  params={"asset_cfg": SceneEntityCfg("robot", body_names=".*torso_pitch.*")},)
     energy = RewTerm(func=mdp.energy, weight=-1e-3)
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
@@ -66,7 +66,7 @@ class T1proRewardCfg(RewardCfg):
         params={
             "std": 0.05,
             "tanh_mult": 2.0,
-            "target_height": 0.12,
+            "target_height": 0.10,
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_pitch.*"),
         },
     )
@@ -114,7 +114,7 @@ class T1proRewardCfg(RewardCfg):
         weight=-0.15,
         params={
             "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[ ".*_hip_roll.*",  ".*_shoulder_pitch.*", ".*_elbow.*"]
+                "robot", joint_names=[ ".*_hip_roll.*",  ".*_shoulder_pitch.*", ".*_elbow.*",".*_hip_yaw.*"]
             )
         },
     )
@@ -123,14 +123,9 @@ class T1proRewardCfg(RewardCfg):
         weight=-0.2,
         params={
             "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[".*torso_yaw.*",".*torso_roll.*", ".*_shoulder_roll.*", ".*_shoulder_yaw.*"]
+                "robot", joint_names=[".*torso_yaw.*",".*torso_roll.*", ".*_shoulder_roll.*", ".*_shoulder_yaw.*", ".*torso_pitch.*"]
             )
         },
-    )
-    joint_deviation_legs = RewTerm(
-        func=mdp.joint_deviation_l1,
-        weight=-0.02,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw.*", ".*_hip_pitch.*", ".*_knee.*", ".*_ankle.*"])},
     )
     ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0005)
     ankle_action = RewTerm(func=mdp.ankle_action, weight=-0.001)
@@ -151,14 +146,34 @@ class T1proRewardCfg(RewardCfg):
         weight=-2.0e-6,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_.*", ".*_knee_joint"])},
     )
-    # double_support = RewTerm(
-    #     func=mdp.double_support_Penalize,
-    #     weight=-0.5,
-    #     params={
-    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_pitch.*"),
-    #         "command_threshold": 0.1,
-    #     },
-    # )
+      
+    # ==================== DWAQ Core Rewards (from DreamWaQ) ====================
+    # Survival bonus - 使用与 HumanoidDreamWaq 一致的权重
+    # HumanoidDreamWaq 使用 alive = 0.15，较小的值避免偷懒站立
+    alive = RewTerm(func=mdp.dwaq_alive, weight=0.15)
+    
+    idle_penalty_lin = RewTerm(
+        func=mdp.dwaq_idle_when_commanded,
+        weight=-2.0,
+        params={"cmd_threshold": 0.1, "vel_threshold": 0.1},
+    )
+    
+    idle_penalty_ang = RewTerm(
+        func=mdp.dwaq_idle_when_commanded_angle,
+        weight=-2.0,
+        params={"cmd_threshold": 0.1, "vel_threshold": 0.1},
+    )
+
+    # Swing foot height control - 控制抬腿高度
+    feet_swing_height = RewTerm(
+        func=mdp.dwaq_feet_swing_height,
+        weight=-0.2,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_pitch.*"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_pitch.*"),
+            "target_height": 0.10,
+        },
+    )
 
 
 @configclass
