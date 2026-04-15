@@ -17,6 +17,7 @@ from scipy.spatial.transform import Rotation
 from humanoid.envs.t1pro_23dof_amp.t1pro_config import T1proFlatEnvCfg
 from humanoid.utils.env_utils.scene import SceneCfg
 from humanoid.envs.base.base_env import BaseEnv
+from rsl_rl.utils import AMPLoaderDisplay
 import isaaclab.utils.math as math_utils
 
 @torch.jit.script
@@ -122,6 +123,10 @@ class T1proEnv(BaseEnv):
         if "startup" in self.event_manager.available_modes:
             self.event_manager.apply(mode="startup")
         self.reset(env_ids)
+        self.amp_loader_display = AMPLoaderDisplay(
+            motion_files=self.cfg.amp_motion_files_display, device=self.device, time_between_frames=self.physics_dt
+        )
+        self.motion_len = self.amp_loader_display.trajectory_num_frames[0]
 
     def init_buffers(self):
         self.extras = {}
@@ -224,9 +229,6 @@ class T1proEnv(BaseEnv):
                 "arm_left_shoulder_roll_joint",
                 "arm_left_shoulder_yaw_joint",
                 "arm_left_elbow_joint",
-                "arm_left_wrist_roll_joint",
-                "arm_left_wrist_yaw_joint",
-                "arm_left_wrist_pitch_joint",
             ],
             preserve_order=True,
         )
@@ -236,9 +238,6 @@ class T1proEnv(BaseEnv):
                 "arm_right_shoulder_roll_joint",
                 "arm_right_shoulder_yaw_joint",
                 "arm_right_elbow_joint",
-                "arm_right_wrist_roll_joint",
-                "arm_right_wrist_yaw_joint",
-                "arm_right_wrist_pitch_joint",
             ],
             preserve_order=True,
         )
@@ -550,6 +549,116 @@ class T1proEnv(BaseEnv):
                 self.left_leg_dof_vel,
                 self.right_leg_dof_vel,
                 self.torso_vel,#.unsqueeze(-1),
+                self.left_arm_dof_vel,
+                self.right_arm_dof_vel,
+                left_hand_pos,
+                right_hand_pos,
+                left_foot_pos,
+                right_foot_pos
+            ),
+            dim=-1,
+        )
+    def visualize_motion(self, time):
+        """
+        Update the robot simulation state based on the AMP motion capture data at a given time.
+
+        This function sets the joint positions and velocities, root position and orientation,
+        and linear/angular velocities according to the AMP motion frame at the specified time,
+        then steps the simulation and updates the scene.
+
+        Args:
+            time (float): The time (in seconds) at which to fetch the AMP motion frame.
+
+        Returns:
+            None
+        """
+        visual_motion_frame = self.amp_loader_display.get_full_frame_at_time(0, time)
+        device = self.device
+
+        dof_pos = torch.zeros((self.num_envs, self.robot.num_joints), device=device)
+        dof_vel = torch.zeros((self.num_envs, self.robot.num_joints), device=device)
+
+        dof_pos[:, self.left_leg_ids] = visual_motion_frame[6:12]
+        dof_pos[:, self.right_leg_ids] = visual_motion_frame[12:18]
+        dof_pos[:, self.torso_ids] = visual_motion_frame[18:21]
+        dof_pos[:, self.left_arm_ids] = visual_motion_frame[21:25]
+        dof_pos[:, self.right_arm_ids] = visual_motion_frame[25:29]
+        
+        dof_vel[:, self.left_leg_ids] = visual_motion_frame[35:41]
+        dof_vel[:, self.right_leg_ids] = visual_motion_frame[41:47]
+        dof_vel[:, self.torso_ids] = visual_motion_frame[47:50]
+        dof_vel[:, self.left_arm_ids] = visual_motion_frame[50:54]
+        dof_vel[:, self.right_arm_ids] = visual_motion_frame[54:58]
+
+        self.robot.write_joint_position_to_sim(dof_pos)
+        self.robot.write_joint_velocity_to_sim(dof_vel)
+
+        env_ids = torch.arange(self.num_envs, device=device)
+
+        root_pos = visual_motion_frame[:3].clone()
+        root_pos[2] += 0.02
+
+        euler = visual_motion_frame[3:6].cpu().numpy()
+        quat_xyzw = Rotation.from_euler("XYZ", euler, degrees=False).as_quat()  # [x, y, z, w]
+        quat_wxyz = torch.tensor(
+            [quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], dtype=torch.float32, device=device
+        )
+
+        lin_vel = visual_motion_frame[29:32].clone()
+        ang_vel = torch.zeros_like(lin_vel)
+
+        # root state: [x, y, z, qw, qx, qy, qz, vx, vy, vz, wx, wy, wz]
+        root_state = torch.zeros((self.num_envs, 13), device=device)
+        root_state[:, 0:3] = torch.tile(root_pos.unsqueeze(0), (self.num_envs, 1))
+        root_state[:, 3:7] = torch.tile(quat_wxyz.unsqueeze(0), (self.num_envs, 1))
+        root_state[:, 7:10] = torch.tile(lin_vel.unsqueeze(0), (self.num_envs, 1))
+        root_state[:, 10:13] = torch.tile(ang_vel.unsqueeze(0), (self.num_envs, 1))
+
+        self.robot.write_root_state_to_sim(root_state, env_ids)
+        self.sim.render()
+        self.sim.step()
+        self.scene.update(dt=self.step_dt)
+
+        left_hand_pos = (
+            self.robot.data.body_state_w[:, self.wrist_yaw_body_ids[0], :3] - self.robot.data.root_state_w[:, 0:3]
+        )
+        right_hand_pos = (
+            self.robot.data.body_state_w[:, self.wrist_yaw_body_ids[1], :3] - self.robot.data.root_state_w[:, 0:3]
+        )
+        left_hand_pos = quat_apply(quat_conjugate(self.robot.data.root_state_w[:, 3:7]), left_hand_pos)
+        right_hand_pos = quat_apply(quat_conjugate(self.robot.data.root_state_w[:, 3:7]), right_hand_pos)
+        left_foot_pos = (
+            self.robot.data.body_state_w[:, self.feet_body_ids[0], :3] - self.robot.data.root_state_w[:, 0:3]
+        )
+        right_foot_pos = (
+            self.robot.data.body_state_w[:, self.feet_body_ids[1], :3] - self.robot.data.root_state_w[:, 0:3]
+        )
+        left_foot_pos = quat_apply(quat_conjugate(self.robot.data.root_state_w[:, 3:7]), left_foot_pos)
+        right_foot_pos = quat_apply(quat_conjugate(self.robot.data.root_state_w[:, 3:7]), right_foot_pos)
+
+        self.left_leg_dof_pos =  dof_pos[:, self.left_leg_ids] 
+        self.right_leg_dof_pos = dof_pos[:, self.right_leg_ids]
+        self.torso_dof_pos = dof_pos[:, self.torso_ids]
+        self.left_arm_dof_pos =  dof_pos[:, self.left_arm_ids] 
+        self.right_arm_dof_pos = dof_pos[:, self.right_arm_ids]
+        
+        self.left_leg_dof_vel =  dof_vel[:, self.left_leg_ids] 
+        self.right_leg_dof_vel = dof_vel[:, self.right_leg_ids]
+        self.torso_dof_vel = dof_vel[:, self.torso_ids]
+        self.left_arm_dof_vel =  dof_vel[:, self.left_arm_ids] 
+        self.right_arm_dof_vel = dof_vel[:, self.right_arm_ids]
+       
+        
+        return torch.cat(
+            (
+                self.left_leg_dof_pos,
+                self.right_leg_dof_pos,
+                self.torso_dof_pos,
+                self.left_arm_dof_pos,
+                self.right_arm_dof_pos,
+                self.left_leg_dof_vel,
+                self.right_leg_dof_vel,
+                self.torso_dof_vel,
                 self.left_arm_dof_vel,
                 self.right_arm_dof_vel,
                 left_hand_pos,

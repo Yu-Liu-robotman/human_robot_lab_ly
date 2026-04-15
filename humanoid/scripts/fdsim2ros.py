@@ -384,6 +384,7 @@ class HumaRobotSimRos(Node):
                 force[:6] = force_sensor
                 # 1000hz -> 100hz
                 if count_lowlevel % cfg.sim_config.decimation == 0:
+                    print(v)
                     target_q = self.rl_policy_forward(param=param, policy=policy, q=(a_q-self.default_joint_pos), dq=a_dq, waist_orient_quat=quat,
                                                       waist_omega=omega, torque_foot=force, force_foot=force_foot,
                                                       lin_vel=lin_vel)
