@@ -551,8 +551,8 @@ class T1proEnv(BaseEnv):
                 self.torso_vel,#.unsqueeze(-1),
                 self.left_arm_dof_vel,
                 self.right_arm_dof_vel,
-                left_hand_pos,
-                right_hand_pos,
+                # left_hand_pos,
+                # right_hand_pos,
                 left_foot_pos,
                 right_foot_pos
             ),

@@ -114,16 +114,25 @@ class T1proRewardCfg(RewardCfg):
         weight=-0.15,
         params={
             "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[ ".*_hip_roll.*",  ".*_shoulder_pitch.*", ".*_elbow.*",".*_hip_yaw.*"]
+                "robot", joint_names=[".*_hip_yaw.*", ".*_hip_roll.*"]
+            )
+        },
+    )
+    joint_deviation_torso = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-0.2,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=[".*torso.*"]
             )
         },
     )
     joint_deviation_arms = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.2,
+        weight=-0.5,
         params={
             "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[".*torso_yaw.*",".*torso_roll.*", ".*_shoulder_roll.*", ".*_shoulder_yaw.*", ".*torso_pitch.*"]
+                "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*"]
             )
         },
     )
@@ -178,7 +187,7 @@ class T1proRewardCfg(RewardCfg):
 
 @configclass
 class T1proFlatEnvCfg(BaseEnvCfg):
-    amp_motion_files_display = ["/home/ubuntu/data/dateset/male_locomotion_gmr/往返走/Take_067_Skeleton1.txt"]
+    amp_motion_files_display = ["/home/ubuntu/Downloads/原地旋转t1pro/原地旋转/Take_026_Skeleton0.txt"]
     rl_version = 2.0
     experiment_name: str = "t1pro_23dof_flat"
     reward = T1proRewardCfg()

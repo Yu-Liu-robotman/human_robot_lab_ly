@@ -135,7 +135,7 @@ class BaseEnvCfg:
                 mode="startup",
                 params={
                     "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-                    "mass_distribution_params": (-0.5, 0.5),
+                    "mass_distribution_params": (-0.5, 5.0),
                     "operation": "add",
                 },
             ),
@@ -191,7 +191,7 @@ class BaseEnvCfg:
                 },
             ),
         ),
-        action_delay=ActionDelayCfg(enable=False, params={"max_delay": 5, "min_delay": 0}),
+        action_delay=ActionDelayCfg(enable=True, params={"max_delay": 5, "min_delay": 0}),
     )
     sim: SimCfg = SimCfg(dt=0.005, decimation=4, physx=PhysxCfg(gpu_max_rigid_patch_count=10 * 2**15))
 
