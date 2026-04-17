@@ -156,9 +156,9 @@ class BaseEnvCfg:
             ),
             reset_robot_joints=EventTerm(
                 func=mdp.reset_joints_by_scale,
-                mode="reset",
+                mode="add",
                 params={
-                    "position_range": (0.5, 2.5),
+                    "position_range": (0.0, 0.3),
                     "velocity_range": (0.0, 0.0),
                 },
             ),

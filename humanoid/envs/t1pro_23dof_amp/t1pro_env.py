@@ -531,26 +531,26 @@ class T1proEnv(BaseEnv):
         self.left_leg_dof_pos = self.dof_pos[:, 0:6]    # 6
         self.right_leg_dof_pos = self.dof_pos[:, 6:12]  # 6
         self.torso_pos = self.dof_pos[:, 12:15]         # 3
-        self.left_arm_dof_pos =  self.dof_pos[:, 15:19] # 4
-        self.right_arm_dof_pos = self.dof_pos[:, 19:23] # 4
+        # self.left_arm_dof_pos =  self.dof_pos[:, [15, 18]] # 4
+        # self.right_arm_dof_pos = self.dof_pos[:, [19, 22]] # 4
         
         self.left_leg_dof_vel = self.dof_vel[:, 0:6] 
         self.right_leg_dof_vel = self.dof_vel[:, 6:12] 
         self.torso_vel = self.dof_vel[:, 12:15]
-        self.left_arm_dof_vel =  self.dof_vel[:, 15:19] 
-        self.right_arm_dof_vel = self.dof_vel[:, 19:23]
+        # self.left_arm_dof_vel =  self.dof_vel[:, [15, 18]] 
+        # self.right_arm_dof_vel = self.dof_vel[:, [19, 22]]
         return torch.cat(
             (
                 self.left_leg_dof_pos,
                 self.right_leg_dof_pos,
                 self.torso_pos,#.unsqueeze(-1),
-                self.left_arm_dof_pos,
-                self.right_arm_dof_pos,
+                # self.left_arm_dof_pos,
+                # self.right_arm_dof_pos,
                 self.left_leg_dof_vel,
                 self.right_leg_dof_vel,
                 self.torso_vel,#.unsqueeze(-1),
-                self.left_arm_dof_vel,
-                self.right_arm_dof_vel,
+                # self.left_arm_dof_vel,
+                # self.right_arm_dof_vel,
                 # left_hand_pos,
                 # right_hand_pos,
                 left_foot_pos,

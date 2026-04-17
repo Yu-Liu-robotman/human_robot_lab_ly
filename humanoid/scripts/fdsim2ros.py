@@ -324,8 +324,10 @@ class HumaRobotSimRos(Node):
         self.default_joint_pos = param['default_joint_pos']
         print("self.default_joint_pos:", self.default_joint_pos)
         self.all_default_joint_pos = [
-            0.0, 0.0, 0.109, 0.2, 0.0, 0.091,
-            0.0, 0.0, 0.109, 0.2, 0.0, 0.091,
+            # 0.0, 0.0, 0.109, 0.2, 0.0, 0.091,
+            # 0.0, 0.0, 0.109, 0.2, 0.0, 0.091,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             0.0, 0.0, 0.0,
             -0.1, 0.2, 0, -1.2, 0, 0, 0,
             -0.1, 0.2, 0, -1.2, 0, 0, 0

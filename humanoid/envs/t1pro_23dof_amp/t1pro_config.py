@@ -114,7 +114,7 @@ class T1proRewardCfg(RewardCfg):
         weight=-0.15,
         params={
             "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[".*_hip_yaw.*", ".*_hip_roll.*"]
+                "robot", joint_names=[".*_hip_yaw.*", ".*_hip_roll.*", ".*_shoulder_pitch.*", ".*elbow.*"]
             )
         },
     )
@@ -196,9 +196,9 @@ class T1proFlatEnvCfg(BaseEnvCfg):
         super().__post_init__()
         self.scene.height_scanner.prim_body_name = "base_link"
         self.scene.robot = T1PRO
-        # self.scene.terrain_type = "plane"
-        self.scene.terrain_type = "generator"
-        self.scene.terrain_generator = GRAVEL_TERRAINS_CFG
+        self.scene.terrain_type = "plane"
+        # self.scene.terrain_type = "generator"
+        # self.scene.terrain_generator = GRAVEL_TERRAINS_CFG
         self.robot.terminate_contacts_body_names = [".*torso_pitch.*"]
         self.robot.feet_body_names = [".*ankle_pitch.*"]
         self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = ["base_link"]
@@ -291,7 +291,13 @@ class T1proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     # amp parameter
     amp_reward_coef = 0.3
     amp_motion_files = [
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/all.txt", 
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/all.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_left_0.1.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_left_0.2.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_left_0.3.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_right_0.1.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_right_0.2.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_right_0.3.txt",
                         "humanoid/envs/t1pro_23dof_amp/datasets/custom/back_0.1.txt",
                         "humanoid/envs/t1pro_23dof_amp/datasets/custom/back_0.2.txt",      
                         "humanoid/envs/t1pro_23dof_amp/datasets/custom/back_0.3.txt",
