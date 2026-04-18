@@ -24,6 +24,7 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
     RslRlRndCfg,
     RslRlSymmetryCfg,
 )
+from humanoid.mdp.symmetry import t1pro
 
 @configclass
 class T1proRewardCfg(RewardCfg):
@@ -60,16 +61,16 @@ class T1proRewardCfg(RewardCfg):
     #     "command_threshold": 0.1,
     #     "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_pitch.*"),
     #   },)
-    feet_clearance = RewTerm(
-        func=mdp.leglab_feet_clearance, 
-        weight=1.0,
-        params={
-            "std": 0.05,
-            "tanh_mult": 2.0,
-            "target_height": 0.10,
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_pitch.*"),
-        },
-    )
+    # feet_clearance = RewTerm(
+    #     func=mdp.leglab_feet_clearance, 
+    #     weight=1.0,
+    #     params={
+    #         "std": 0.05,
+    #         "tanh_mult": 2.0,
+    #         "target_height": 0.10,
+    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_pitch.*"),
+    #     },
+    # )
 
     feet_air_time = RewTerm(
         func=mdp.leglab_feet_air_time_positive_biped,
@@ -79,12 +80,20 @@ class T1proRewardCfg(RewardCfg):
             "threshold": 0.4,
         },
     )
-    foot_slip = RewTerm(
-        func=mdp.mjlab_feet_slip,
-        weight=-0.5,
+    # foot_slip = RewTerm(
+    #     func=mdp.mjlab_feet_slip,
+    #     weight=-0.5,
+    #     params={
+    #         "command_threshold": 0.1,
+    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_pitch.*"),
+    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_pitch.*"),
+    #     },
+    # )
+    feet_slide = RewTerm(
+        func=mdp.atom_feet_slide,
+        weight=-0.1,
         params={
-            "command_threshold": 0.1,
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_pitch.*"),
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_pitch.*"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_pitch.*"),
         },
     )
@@ -183,8 +192,17 @@ class T1proRewardCfg(RewardCfg):
             "target_height": 0.10,
         },
     )
-
-
+    double_support_penalize = RewTerm(
+        func=mdp.double_support_penalize,
+        weight=-0.5,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_pitch.*"),
+            "command_threshold": 0.1,
+            "max_ds_time": 0.1,
+            "force_threshold": 5.0,
+        },
+    )
+    
 @configclass
 class T1proFlatEnvCfg(BaseEnvCfg):
     amp_motion_files_display = ["/home/ubuntu/Downloads/原地旋转t1pro/原地旋转/Take_026_Skeleton0.txt"]
@@ -321,6 +339,17 @@ class T1proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     amp_task_reward_lerp = 0.7
     amp_discr_hidden_dims = [1024, 512, 256]
     min_normalized_std = [0.05] * 23
+    
+class T1proAmpFlatSymAgentCfg(T1proAmpFlatAgentCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.algorithm.symmetry_cfg = RslRlSymmetryCfg(
+            use_data_augmentation=True,
+            use_mirror_loss=True,
+            mirror_loss_coeff=0.1, 
+            data_augmentation_func=t1pro.compute_symmetric_states
+        )
+    
 
 
 

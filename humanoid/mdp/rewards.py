@@ -140,8 +140,8 @@ def body_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg
 def feet_stumble(env: BaseEnv, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
     return torch.any(
-        torch.norm(contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, :2], dim=2)
-        > 5 * torch.abs(contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2]),
+        torch.norm(contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, :2], dim=2) # 脚的x,y方向发生碰撞
+        > 5 * torch.abs(contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2]),   # 大于5倍脚与地面的碰撞惩罚
         dim=1,
     )
 
@@ -152,18 +152,18 @@ def feet_too_near_humanoid(
     assert len(asset_cfg.body_ids) == 2
     asset: Articulation = env.scene[asset_cfg.name]
     feet_pos = asset.data.body_pos_w[:, asset_cfg.body_ids, :]
-    distance = torch.norm(feet_pos[:, 0] - feet_pos[:, 1], dim=-1)
-    return (threshold - distance).clamp(min=0)
+    distance = torch.norm(feet_pos[:, 0] - feet_pos[:, 1], dim=-1) # 脚的3d距离
+    return (threshold - distance).clamp(min=0)                     # 脚的3d距离大于阈值，则奖励为0，否则为阈值减去脚的3d距离惩罚
 
 # Regularization Reward
 def ankle_torque(env: BaseEnv) -> torch.Tensor:
     """Penalize large torques on the ankle joints."""
-    return torch.sum(torch.square(env.robot.data.applied_torque[:, env.ankle_joint_ids]), dim=1)
+    return torch.sum(torch.square(env.robot.data.applied_torque[:, env.ankle_joint_ids]), dim=1) # 脚踝扭矩越小越好
 
 
 def ankle_action(env: BaseEnv) -> torch.Tensor:
     """Penalize ankle joint actions."""
-    return torch.sum(torch.abs(env.action[:, [4,5,10,11]]), dim=1)
+    return torch.sum(torch.abs(env.action[:, [4,5,10,11]]), dim=1) # 脚踝位置越小越好
 
 
 def hip_roll_action(env: BaseEnv) -> torch.Tensor:
@@ -588,11 +588,11 @@ def mjlab_feet_slip(
   angular_norm = torch.abs(command[:, 2])
   total_command = linear_norm + angular_norm
   active = (total_command > command_threshold).float()
-  in_contact = (contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0).float()  # [B, N]
-  foot_vel_xy = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2]  # [B, N, 2]
+  in_contact = (contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0).float()  # [B, N] # 有接触
+  foot_vel_xy = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2]  # [B, N, 2] 
   vel_xy_norm = torch.norm(foot_vel_xy, dim=-1)  # [B, N]
   vel_xy_norm_sq = torch.square(vel_xy_norm)  # [B, N]
-  cost = torch.sum(vel_xy_norm_sq * in_contact, dim=1) * active
+  cost = torch.sum(vel_xy_norm_sq * in_contact, dim=1) * active # 有控制命令， 支撑腿的xy速度惩罚
   return cost
 
 
@@ -601,16 +601,16 @@ def mjlab_soft_landing(
 ) -> torch.Tensor:
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
     reward = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2].norm(dim=-1)
-    reward[reward < threshold] = 0
-    reward[reward > threshold] -= threshold
-    reward = reward.clamp(min=0, max=max_reward)
+    reward[reward < threshold] = 0 # 脚上接触小于阈值不惩罚
+    reward[reward > threshold] -= threshold # 脚上接触大于阈值，大于部分惩罚
+    reward = reward.clamp(min=0, max=max_reward) # 惩罚上限
     command = env.command_generator.command
     if command is not None:
       linear_norm = torch.norm(command[:, :2], dim=1)
       angular_norm = torch.abs(command[:, 2])
       total_command = linear_norm + angular_norm
       active = (total_command > command_threshold).float()
-    return reward * active
+    return reward * active # 响应命令过程中才惩罚
 
 def leglab_feet_air_time_positive_biped(env: BaseEnv, sensor_cfg: SceneEntityCfg, threshold: float, command_threshold: float = 0.1) -> torch.Tensor:
     """Reward long steps taken by the feet for bipeds.
@@ -644,7 +644,8 @@ def leglab_feet_clearance(
     """Reward the swinging feet for clearing a specified height off the ground"""
     asset: Articulation = env.scene[asset_cfg.name]
     foot_z_target_error = torch.square(asset.data.body_pos_w[:, asset_cfg.body_ids, 2] - target_height)
-    foot_velocity_tanh = torch.tanh(tanh_mult * torch.norm(asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2], dim=2))
+    foot_velocity_tanh = torch.tanh(tanh_mult * (torch.norm(asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2], dim=2)
+                                                + torch.abs(asset.data.body_ang_vel_w[:, asset_cfg.body_ids, 2])))
     reward = foot_z_target_error * foot_velocity_tanh
     return torch.exp(-torch.sum(reward, dim=1) / std)
 
@@ -659,7 +660,7 @@ def leglab_stand_still_joint_deviation_l1(
     angular_norm = torch.abs(command[:, 2])
     total_command = linear_norm + angular_norm
     active = (total_command < command_threshold).float()
-    return joint_deviation_l1(env, asset_cfg) * active
+    return joint_deviation_l1(env, asset_cfg) * active # 没速度时限制所有关节位置
 
 def double_support_Penalize(
   env: BaseEnv, sensor_cfg: SceneEntityCfg, command_threshold: float = 0.01,
@@ -697,10 +698,9 @@ def double_support_penalize(
     linear_norm = torch.norm(command[:, :2], dim=1)
     angular_norm = torch.abs(command[:, 2])
     total_command = linear_norm + angular_norm
-    active = total_command > command_threshold
-    long_ds = env.ds_time > max_ds_time
-
-    cost = long_ds.float() * total_command * active.float()
+    active = total_command > command_threshold  # 有速度
+    long_ds = env.ds_time > max_ds_time         # 双支撑太久
+    cost = long_ds.float() * total_command * active.float() # 双支撑太久and有速度, 速度越大惩罚越大
     cost = cost.clamp(0.0, 1.0)
     return cost
 
@@ -830,10 +830,10 @@ def dwaq_idle_when_commanded(
     vel_magnitude = torch.linalg.norm(vel_yaw[:, :2], dim=-1)
     
     # Detect "commanded but idle" condition
-    is_commanded = cmd_magnitude > cmd_threshold  # Should be moving
-    is_idle = vel_magnitude < vel_threshold       # But not moving
+    is_commanded = cmd_magnitude > cmd_threshold  # 命令有线速度
+    is_idle = vel_magnitude < vel_threshold       # 身体没线速度
     
-    return (is_commanded & is_idle).float()
+    return (is_commanded & is_idle).float() # 命令有线速度身体没线速度惩罚
 
 def dwaq_idle_when_commanded_angle(
     env: BaseEnv,
@@ -870,7 +870,7 @@ def dwaq_idle_when_commanded_angle(
     asset: Articulation = env.scene[asset_cfg.name]
     
     # Get velocity command (xy components)
-    cmd_yaw = env.command_generator.command[:, 2]
+    cmd_yaw = env.command_generator.command[:, 2] 
     cmd_magnitude = torch.abs(cmd_yaw)
     
     # Get actual root velocity in yaw frame (same as track_lin_vel_xy uses)
@@ -878,10 +878,10 @@ def dwaq_idle_when_commanded_angle(
     vel_magnitude = torch.abs(vel_yaw)
     
     # Detect "commanded but idle" condition
-    is_commanded = cmd_magnitude > cmd_threshold  # Should be moving
-    is_idle = vel_magnitude < vel_threshold       # But not moving
+    is_commanded = cmd_magnitude > cmd_threshold  # 命令有角速度
+    is_idle = vel_magnitude < vel_threshold       # 腰部没角速度
     
-    return (is_commanded & is_idle).float()
+    return (is_commanded & is_idle).float() # 命令有速度身体没角速度惩罚
 
 
 def dwaq_feet_swing_height(
@@ -908,12 +908,67 @@ def dwaq_feet_swing_height(
     
     # Get contact status
     net_contact_forces = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, :]
-    contact = torch.norm(net_contact_forces, dim=-1) > 1.0  # (num_envs, num_feet)
+    contact = torch.norm(net_contact_forces, dim=-1) > 1.0  # (num_envs, num_feet) # 接触mask
     
     # Get feet positions (z-coordinate)
-    feet_pos_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]  # (num_envs, num_feet)
+    feet_pos_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]  # (num_envs, num_feet) # 脚的z轴高度
     
     # Penalize height error only during swing phase (not in contact)
-    pos_error = torch.square(feet_pos_z - target_height) * (~contact).float()
+    pos_error = torch.square(feet_pos_z - target_height) * (~contact).float() # 脚处于摆动阶段时，脚的高度误差越大惩罚越大
     
     return torch.sum(pos_error, dim=-1)
+
+def atom_low_speed_sway_penalty(
+    env: BaseEnv, command_threshold: float = 0.1, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize linear and angular velocities when command velocity is below threshold.
+    
+    This function penalizes the robot for moving (both linear and angular) when the command
+    speed is very small, encouraging the robot to remain still during low-speed commands.
+    """
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+    
+    # Get command velocity
+    command = env.command_generator.command.clone()
+    command_speed = torch.norm(command[:, :3], dim=1)
+    
+    # Penalize linear velocity in xy plane
+    lin_vel_penalty = torch.sum(torch.square(asset.data.root_lin_vel_b[:, :2]), dim=1)
+    
+    # Penalize angular velocity
+    ang_vel_penalty = torch.sum(torch.square(asset.data.root_ang_vel_b), dim=1)
+    
+    # Total velocity penalty
+    vel_penalty = lin_vel_penalty + ang_vel_penalty
+    
+    # Apply penalty only when command speed is below threshold
+    return vel_penalty * (command_speed < command_threshold).float()
+
+def atom_feet_slide(
+    env: BaseEnv, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize feet sliding.
+
+    This function penalizes the agent for sliding its feet on the ground. The reward is computed as the
+    norm of the linear velocity of the feet multiplied by a binary contact sensor. This ensures that the
+    agent is penalized only when the feet are in contact with the ground.
+    """
+    # Penalize feet sliding
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    contacts = contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    cur_footvel_translated = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :] - asset.data.root_lin_vel_w[
+        :, :
+    ].unsqueeze(1)
+    footvel_in_body_frame = torch.zeros(env.num_envs, len(asset_cfg.body_ids), 3, device=env.device)
+    for i in range(len(asset_cfg.body_ids)):
+        footvel_in_body_frame[:, i, :] = math_utils.quat_apply_inverse(
+            asset.data.root_quat_w, cur_footvel_translated[:, i, :]
+        )
+    foot_leteral_vel = torch.sqrt(torch.sum(torch.square(footvel_in_body_frame[:, :, :2]), dim=2)).view(
+        env.num_envs, -1
+    )
+    reward = torch.sum(foot_leteral_vel * contacts, dim=1)
+    return reward
