@@ -292,6 +292,12 @@ class T1proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
         max_grad_norm=1.0,
         normalize_advantage_per_mini_batch=False,
         symmetry_cfg=None,  # RslRlSymmetryCfg()
+        # symmetry_cfg = RslRlSymmetryCfg(
+        #     use_data_augmentation=True,
+        #     use_mirror_loss=True,
+        #     mirror_loss_coeff=0.1, 
+        #     data_augmentation_func=t1pro.compute_symmetric_states
+        # ),
         rnd_cfg=None,  # RslRlRndCfg()
     )
     clip_actions = None
@@ -340,6 +346,9 @@ class T1proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     amp_discr_hidden_dims = [1024, 512, 256]
     min_normalized_std = [0.05] * 23
     
+class T1proAmpFlatSymEnvCfg(T1proFlatEnvCfg):
+    experiment_name: str = "t1pro_23dof_amp_sym_flat"
+    amp_motion_files_display = ["/home/ubuntu/data/dateset/male_locomotion_gmr/往返走/Take_067_Skeleton1.txt"]
 class T1proAmpFlatSymAgentCfg(T1proAmpFlatAgentCfg):
     def __post_init__(self):
         super().__post_init__()
