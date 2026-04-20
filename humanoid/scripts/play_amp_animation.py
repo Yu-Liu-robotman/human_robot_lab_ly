@@ -64,8 +64,6 @@ def play_amp_animation():
                 frame = frame.cpu().numpy().reshape(-1)
                 all_frames.append(frame)
             frame_cnt += 1
-            if frame_cnt >= (env.motion_len - 1):  
-                break
         break
 
     if args_cli.save_path:
