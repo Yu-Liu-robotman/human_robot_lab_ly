@@ -80,19 +80,26 @@ def _transform_policy_obs_left_right(env: BaseEnv, obs: torch.Tensor) -> torch.T
     # copy observation tensor
     obs = obs.clone()
     device = obs.device
-
+    obs_dim = 78
+    assert obs.shape[1] % obs_dim == 0, \
+        f"Obs dim {obs.shape[1]} is not divisible by {obs_dim}"
+    num_frames = obs.shape[1] // obs_dim
+    # [N, T*78] -> [N, T, 78]
+    obs = obs.view(obs.shape[0], num_frames, obs_dim)
+    
     # velocity command
-    obs[:, 0:3] = obs[:, 0:3] * torch.tensor([1, -1, -1], device=device)
+    obs[..., 0:3] = obs[..., 0:3] * torch.tensor([1, -1, -1], device=device)
     # joint pos
-    obs[:, 3:26] = _switch_joints_left_right(obs[:, 3:26])
+    obs[..., 3:26] = _switch_joints_left_right(obs[..., 3:26])
     # joint vel
-    obs[:, 26:49] = _switch_joints_left_right(obs[:, 26:49])
+    obs[..., 26:49] = _switch_joints_left_right(obs[..., 26:49])
     # last actions
-    obs[:, 49:72] = _switch_joints_left_right(obs[:, 49:72])
+    obs[..., 49:72] = _switch_joints_left_right(obs[..., 49:72])
     # ang vel
-    obs[:, 72:75] = obs[:, 72:75] * torch.tensor([-1, 1, -1], device=device)
+    obs[..., 72:75] = obs[..., 72:75] * torch.tensor([-1, 1, -1], device=device)
     # projected gravity
-    obs[:, 75:78] = obs[:, 75:78] * torch.tensor([1, -1, 1], device=device)
+    obs[..., 75:78] = obs[..., 75:78] * torch.tensor([1, -1, 1], device=device)
+    obs = obs.view(obs.shape[0], num_frames * obs_dim)
     return obs
 
 
@@ -108,24 +115,30 @@ def _transform_critic_obs_left_right(env: BaseEnv, obs: torch.Tensor) -> torch.T
     # copy observation tensor
     obs = obs.clone()
     device = obs.device
-    
+    obs_dim = 83
+    assert obs.shape[1] % obs_dim == 0, \
+        f"Obs dim {obs.shape[1]} is not divisible by {obs_dim}"
+    num_frames = obs.shape[1] // obs_dim
+    # [N, T*83] -> [N, T, 83]
+    obs = obs.view(obs.shape[0], num_frames, obs_dim)
     # velocity command
-    obs[:, 0:3] = obs[:, 0:3] * torch.tensor([1, -1, -1], device=device)
+    obs[..., 0:3] = obs[..., 0:3] * torch.tensor([1, -1, -1], device=device)
     # joint pos
-    obs[:, 3:26] = _switch_joints_left_right(obs[:, 3:26])
+    obs[..., 3:26] = _switch_joints_left_right(obs[..., 3:26])
     # joint vel
-    obs[:, 26:49] = _switch_joints_left_right(obs[:, 26:49])
+    obs[..., 26:49] = _switch_joints_left_right(obs[..., 26:49])
     # last actions
-    obs[:, 49:72] = _switch_joints_left_right(obs[:, 49:72])
+    obs[..., 49:72] = _switch_joints_left_right(obs[..., 49:72])
     # ang vel
-    obs[:, 72:75] = obs[:, 72:75] * torch.tensor([-1, 1, -1], device=device)
+    obs[..., 72:75] = obs[..., 72:75] * torch.tensor([-1, 1, -1], device=device)
     # projected gravity
-    obs[:, 75:78] = obs[:, 75:78] * torch.tensor([1, -1, 1], device=device)
+    obs[..., 75:78] = obs[..., 75:78] * torch.tensor([1, -1, 1], device=device)
     # lin vel
-    obs[:, 78:81] = obs[:, 78:81] * torch.tensor([1, -1, 1], device=device)
+    obs[..., 78:81] = obs[..., 78:81] * torch.tensor([1, -1, 1], device=device)
     # contact mask
-    contact = obs[:, 81:83].clone()
-    obs[:, 81:83] = contact[:, [1, 0]]
+    contact = obs[..., 81:83].clone()
+    obs[..., 81:83] = contact[..., [1, 0]]
+    obs = obs.view(obs.shape[0], num_frames * obs_dim)
     return obs
 
 
