@@ -36,7 +36,7 @@ from rsl_rl.modules import (
     StudentTeacher,
     StudentTeacherRecurrent,
 )
-from rsl_rl.utils import AMPLoader, Normalizer, store_code_state
+from rsl_rl.utils import AMPLoader, Normalizer, store_code_state, AMPLoaderTK
 
 
 class AmpOnPolicyRunner:
@@ -107,10 +107,13 @@ class AmpOnPolicyRunner:
             self.alg_cfg["symmetry_cfg"]["_env"] = env
 
         # init amp loader
-        amp_data = AMPLoader(
+        amp_data = AMPLoaderTK(
             device,
             time_between_frames=self.env.step_dt,
             preload_transitions=True,
+            all_body_names=self.env.robot.data.body_names,
+            body_names=train_cfg["amp_body_names"],
+            anchor_name=train_cfg["amp_anchor_name"], 
             num_preload_transitions=train_cfg["amp_num_preload_transitions"],
             motion_files=train_cfg["amp_motion_files"],
         )

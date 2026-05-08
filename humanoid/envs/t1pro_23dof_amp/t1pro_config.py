@@ -3,7 +3,7 @@ from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
 
 import humanoid.mdp as mdp
-from humanoid.assets.t1pro import T1PRO
+from humanoid.assets.t1pro import T1PRO_23DOF
 from humanoid.envs.base.base_env_config import (  # noqa:F401
     BaseAgentCfg,
     BaseEnvCfg,
@@ -25,7 +25,16 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
     RslRlSymmetryCfg,
 )
 from humanoid.mdp.symmetry import t1pro
-
+KEY_POS_LIST=[
+    "base_link",
+    "leg_left_hip_pitch_link",
+    "leg_right_hip_pitch_link",
+    "leg_left_knee_link",
+    "leg_right_knee_link",
+    "leg_left_ankle_pitch_link",
+    "leg_right_ankle_pitch_link"
+]
+ANCHOR_NAME = "torso_pitch_link"
 @configclass
 class T1proRewardCfg(RewardCfg):
     track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_yaw_frame_exp, weight=2.0, params={"std": 0.5})
@@ -205,15 +214,13 @@ class T1proRewardCfg(RewardCfg):
     
 @configclass
 class T1proFlatEnvCfg(BaseEnvCfg):
-    amp_motion_files_display = ["/home/ubuntu/Downloads/原地旋转t1pro/原地旋转/Take_026_Skeleton0.txt"]
-    rl_version = 2.0
-    experiment_name: str = "t1pro_23dof_flat"
     reward = T1proRewardCfg()
-    rand_dof_nums = 6
+    key_pos_list = KEY_POS_LIST
+    anchor_name = ANCHOR_NAME
     def __post_init__(self):
         super().__post_init__()
         self.scene.height_scanner.prim_body_name = "base_link"
-        self.scene.robot = T1PRO
+        self.scene.robot = T1PRO_23DOF
         self.scene.terrain_type = "plane"
         # self.scene.terrain_type = "generator"
         # self.scene.terrain_generator = GRAVEL_TERRAINS_CFG
@@ -224,6 +231,9 @@ class T1proFlatEnvCfg(BaseEnvCfg):
         self.commands.ranges.lin_vel_y = (-0.5, 0.5)
         self.commands.ranges.ang_vel_z = (-1.57, 1.57)
         self.commands.ranges.heading_command = False
+        self.experiment_name = "t1pro_23dof_flat"
+        self.rl_version = 2.0
+        self.rand_dof_nums = 0
 
 @configclass
 class T1proFlatAgentCfg(BaseAgentCfg):
@@ -233,7 +243,6 @@ class T1proFlatAgentCfg(BaseAgentCfg):
 @configclass
 class T1proRoughEnvCfg(T1proFlatEnvCfg):
     experiment_name: str = "t1pro_23dof_rough"
-    amp_motion_files_display = ["/home/ubuntu/data/dateset/male_locomotion_gmr/往返走/Take_067_Skeleton1.txt"]
     def __post_init__(self):
         super().__post_init__()
         self.scene.height_scanner.enable_height_scan = True
@@ -260,7 +269,6 @@ class T1proRoughAgentCfg(BaseAgentCfg):
         
 class T1proAmpFlatEnvCfg(T1proFlatEnvCfg):
     experiment_name: str = "t1pro_23dof_amp_flat"
-    amp_motion_files_display = ["/home/ubuntu/data/dateset/male_locomotion_gmr/往返走/Take_067_Skeleton1.txt"]
 @configclass
 class T1proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     seed = 42
@@ -315,36 +323,65 @@ class T1proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     # amp parameter
     amp_reward_coef = 0.3
     amp_motion_files = [
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/all.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_left_0.1.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_left_0.2.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_left_0.3.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_right_0.1.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_right_0.2.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_right_0.3.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/back_0.1.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/back_0.2.txt",      
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/back_0.3.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/forward_0.1.txt",     
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/forward_0.2.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/forward_0.3.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/output_stand_23dof.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/turn_left0.1.txt",      
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/turn_left0.2.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/turn_right0.1.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/turn_right0.2.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_left_0.1.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_left_0.2.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_left_0.3.txt",      
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_right_0.1.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_right_0.2.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_right_0.3.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/custom/forward_0.1_0.4.txt"    
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_016_Skeleton1_forward0.1.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_017_Skeleton1_forward0.2.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_018_Skeleton1_forward0.3.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_020_Skeleton1_forward0.1-0.4.txt",
+                        
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_012_Skeleton0_left0.2.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_013_Skeleton0_right0.2.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_017_Skeleton0_left0.3.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_018_Skeleton0_right0.3.txt",
+                        
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_031_Skeleton1_back0.1.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_032_Skeleton1_back0.2.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_034_Skeleton1_back0.3.txt",
+                        
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_001_Skeleton1_stand.txt",
+                        
+                        
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_035_Skeleton1_side_right0.1.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_036_Skeleton1_side_left0.1.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_039_Skeleton1_side_left0.2.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_037_Skeleton1_side_right0.2.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_040_Skeleton1_side_right0.3.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_043_Skeleton1_side_left0.3.txt",
+                        
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_055_Skeleton1_turn_left0.1.txt",
+                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_057_Skeleton1_turn_right0.1.txt"
+                        
+                        # # "humanoid/envs/t1pro_23dof_amp/datasets/custom/all.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_left_0.1.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_left_0.2.txt",
+                        # # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_left_0.3.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_right_0.1.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_right_0.2.txt",
+                        # # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_right_0.3.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/back_0.1.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/back_0.2.txt",      
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/back_0.3.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/forward_0.1.txt",     
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/forward_0.2.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/forward_0.3.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/output_stand_23dof.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/turn_left0.1.txt",      
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/turn_left0.2.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/turn_right0.1.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/turn_right0.2.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_left_0.1.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_left_0.2.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_left_0.3.txt",      
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_right_0.1.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_right_0.2.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_right_0.3.txt",
+                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/forward_0.1_0.4.txt"    
                         ]
     amp_num_preload_transitions = 200000
     amp_task_reward_lerp = 0.7
     amp_discr_hidden_dims = [1024, 512, 256]
     min_normalized_std = [0.05] * 23
+    amp_body_names=KEY_POS_LIST
+    amp_anchor_name=ANCHOR_NAME
     
 class T1proAmpFlatSymEnvCfg(T1proFlatEnvCfg):
     experiment_name: str = "t1pro_23dof_amp_sym_flat"

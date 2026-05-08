@@ -24,9 +24,9 @@ import torch
 
 
 class AMPLoader:
-    JOINT_POS_SIZE = 15
+    JOINT_POS_SIZE = 19
 
-    JOINT_VEL_SIZE = 15
+    JOINT_VEL_SIZE = 19
 
     END_EFFECTOR_POS_SIZE = 6
 
@@ -75,47 +75,18 @@ class AMPLoader:
                 motion_data = motion_data1[:, [0, 1, 2, 3, 4, 5, 
                                                6, 7, 8, 9, 10, 11,
                                                12, 13, 14,
-                                               #15, 18, #  16, 17,
-                                               #19, 22,  #  20, 21,
+                                               15, 18, #  16, 17,
+                                               19, 22,  #  20, 21,
                                                
                                                23, 24, 25, 26, 27, 28, 
                                                29, 30, 31, 32, 33, 34,
                                                35, 36, 37,
-                                               #38, 41, # 39, 40, 
-                                               #42, 45, # 43, 44, 
+                                               38, 41, # 39, 40, 
+                                               42, 45, # 43, 44, 
                                                
                                             #    46, 47, 48, 49, 50, 51,
                                                52, 53, 54, 55, 56, 57,
                                                ]]
-                # motion_data1 = np.array(motion_json["Frames"])
-                # motion_data = motion_data1[:, [0, 1, 2, 3, 4, 5, 
-                #                                6, 7, 8, 9, 10, 11,
-                #                                12, 13, 14,
-                #                                15, 16, 17, 18,
-                #                                22, 23, 24, 25,
-                                               
-                #                                29, 30, 31, 32, 33, 34, 
-                #                                35, 36, 37, 38, 39, 40,
-                #                                41, 42, 43,
-                #                                44, 45, 46, 47,
-                #                                51, 52, 53, 54,
-                                               
-                #                                58, 59, 60, 61, 62, 63,
-                #                                64, 65, 66, 67, 68, 69,
-                #                                ]]
-                # motion_data = motion_data1[:, [0, 2, 3, 5,
-                #                             6,  8, 9, 11,
-                #                             12, 
-                #                             15, 17, 18, 20, 
-                #                             21, 23, 24, 26,
-                #                             27,
-                #                             30, 31, 32, 33, 34, 35,
-                #                             ]]
-
-               
-                # motion_data[:, [1,  4,  7,  10, 13, 14, 
-                #                 16, 19, 22, 25, 28, 29]] *= 0.0
-                
                 # Remove first 7 observation dimensions (root_pos and root_orn).
                 self.trajectories.append(
                     torch.tensor(motion_data[:, : AMPLoader.END_POS_END_IDX], dtype=torch.float32, device=device)
