@@ -26,11 +26,11 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
 )
 from humanoid.mdp.symmetry import t1pro
 KEY_POS_LIST=[
-    "base_link",
-    "leg_left_hip_pitch_link",
-    "leg_right_hip_pitch_link",
-    "leg_left_knee_link",
-    "leg_right_knee_link",
+    "torso_pitch_link",
+    #"leg_left_hip_pitch_link",
+    #"leg_right_hip_pitch_link",
+    #"leg_left_knee_link",
+    #"leg_right_knee_link",
     "leg_left_ankle_pitch_link",
     "leg_right_ankle_pitch_link"
 ]

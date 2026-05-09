@@ -570,8 +570,8 @@ class T1proEnv(BaseEnv):
                 joint_vel,
                 tgt_robot_body_pos_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
                 tgt_robot_body_ori_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
-                tgt_body_lin_vel_w.reshape(tgt_robot_body_pos_b.shape[0], -1),
-                tgt_body_ang_vel_w.reshape(tgt_robot_body_pos_b.shape[0], -1),  
+                tgt_body_lin_vel_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
+                tgt_body_ang_vel_b.reshape(tgt_robot_body_pos_b.shape[0], -1),  
             ),
             dim=-1,
         )
