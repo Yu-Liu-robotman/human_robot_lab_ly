@@ -38,7 +38,7 @@ from isaaclab.sim import SimulationContext
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-from humanoid.assets.t1pro.t1pro import T1PRO_23DOF as ROB_T1PRO_23
+from humanoid.assets.t2pro.t2pro import T2PRO as ROB_T2PRO
 
 
 from humanoid.mdp.mimic.motion_loader import MotionLoader
@@ -107,8 +107,8 @@ def main():
     sim = SimulationContext(sim_cfg)
 
     scene_cfg = ReplayMotionsSceneCfg(num_envs=1, env_spacing=2.0)
-    if args_cli.robot == "t1pro_23dof":
-        scene_cfg.robot = ROB_T1PRO_23.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    if args_cli.robot == "t2pro":
+        scene_cfg.robot = ROB_T2PRO.replace(prim_path="{ENV_REGEX_NS}/Robot")
     else:
         raise ValueError(f"Unsupported robot type: {args_cli.robot}")
     

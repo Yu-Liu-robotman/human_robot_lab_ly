@@ -6,8 +6,6 @@
 """Helper functions."""
 
 from .motion_loader import AMPLoader
-from .motion_loader_tk_all import AMPLoaderTK
-from .motion_loader_for_display import AMPLoaderDisplay
 from .utils import (
     Normalizer,
     resolve_nn_activation,
@@ -19,6 +17,4 @@ from .utils import (
 
 __all__ = [
     "AMPLoader",
-    "AMPLoaderDisplay",
-    "AMPLoaderTK"
 ]

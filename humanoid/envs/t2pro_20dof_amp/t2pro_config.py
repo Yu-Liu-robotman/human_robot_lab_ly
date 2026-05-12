@@ -31,6 +31,10 @@ KEY_POS_LIST=[
     #"leg_right_hip_pitch_link",
     #"leg_left_knee_link",
     #"leg_right_knee_link",
+    # "arm_left_shoulder_yaw_link",
+    # "arm_right_shoulder_yaw_link",
+    # "arm_left_elbow_link",
+    # "arm_right_elbow_link",
     "leg_left_ankle_roll_link",
     "leg_right_ankle_roll_link"
 ]
@@ -319,58 +323,30 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     # amp parameter
     amp_reward_coef = 0.3
     amp_motion_files = [
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_016_Skeleton1_forward0.1.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_017_Skeleton1_forward0.2.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_018_Skeleton1_forward0.3.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_020_Skeleton1_forward0.1-0.4.txt",
-                        
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_012_Skeleton0_left0.2.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_013_Skeleton0_right0.2.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_017_Skeleton0_left0.3.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_018_Skeleton0_right0.3.txt",
-                        
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_031_Skeleton1_back0.1.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_032_Skeleton1_back0.2.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_034_Skeleton1_back0.3.txt",
-                        
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_001_Skeleton1_stand.txt",
-                        
-                        
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_035_Skeleton1_side_right0.1.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_036_Skeleton1_side_left0.1.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_039_Skeleton1_side_left0.2.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_037_Skeleton1_side_right0.2.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_040_Skeleton1_side_right0.3.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_043_Skeleton1_side_left0.3.txt",
-                        
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_055_Skeleton1_turn_left0.1.txt",
-                        "humanoid/envs/t1pro_23dof_amp/datasets/508_new_23dof/Take_057_Skeleton1_turn_right0.1.txt"
-                        
-                        # # "humanoid/envs/t1pro_23dof_amp/datasets/custom/all.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_left_0.1.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_left_0.2.txt",
-                        # # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_left_0.3.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_right_0.1.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_right_0.2.txt",
-                        # # "humanoid/envs/t1pro_23dof_amp/datasets/custom/or_turn_right_0.3.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/back_0.1.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/back_0.2.txt",      
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/back_0.3.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/forward_0.1.txt",     
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/forward_0.2.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/forward_0.3.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/output_stand_23dof.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/turn_left0.1.txt",      
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/turn_left0.2.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/turn_right0.1.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/turn_right0.2.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_left_0.1.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_left_0.2.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_left_0.3.txt",      
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_right_0.1.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_right_0.2.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/side_right_0.3.txt",
-                        # "humanoid/envs/t1pro_23dof_amp/datasets/custom/forward_0.1_0.4.txt"    
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/11-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/21-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/31-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/41-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/51-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/61-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/71-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/81-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/91-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/101-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/111-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/121-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/131-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/141-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/151-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/161-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/171-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/181-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/191-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/201-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/211-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/221-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/232-0511.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/stand11-0511.txt"
                         ]
     amp_num_preload_transitions = 200000
     amp_task_reward_lerp = 0.7

@@ -60,7 +60,7 @@ from isaaclab.utils.math import axis_angle_from_quat, quat_conjugate, quat_mul, 
 ##
 # Pre-defined configs
 ##
-from humanoid.assets.t1pro.t1pro import T1PRO_23DOF as ROBOT_CFG  
+from humanoid.assets.t2pro.t2pro import T2PRO as ROBOT_CFG  
 
 
 @configclass

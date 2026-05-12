@@ -21,29 +21,66 @@ import json
 
 import numpy as np
 import torch
-
-
+import isaaclab.utils.math as math_utils
+from collections.abc import Sequence
 class AMPLoader:
-    JOINT_POS_SIZE = 19
-
-    JOINT_VEL_SIZE = 19
-
-    END_EFFECTOR_POS_SIZE = 6
-
+    # "joint_pos",
+    # "joint_vel",
+    # "body_pos_w",
+    # "body_quat_w",
+    # "body_lin_vel_w",
+    # "body_ang_vel_w",
+    # "joint_pos_mujoco",
+    # "joint_vel_mujoco"
+    BODY_SIZE = 21
+    JOINT_POS_SIZE = 20
+    JOINT_VEL_SIZE = 20
+    BODY_POS_SIZE = BODY_SIZE * 3
+    BODY_QUAT_SIZE = BODY_SIZE * 4
+    BODY_LIN_VEL_SIZE = BODY_SIZE * 3
+    BODY_ANG_VEL_SIZE = BODY_SIZE * 3
+    JOINT_POS_MUJOCO_SIZE = 20
+    JOINT_VEL_MUJOCO_SIZE = 20
     JOINT_POSE_START_IDX = 0
     JOINT_POSE_END_IDX = JOINT_POSE_START_IDX + JOINT_POS_SIZE
-
     JOINT_VEL_START_IDX = JOINT_POSE_END_IDX
     JOINT_VEL_END_IDX = JOINT_VEL_START_IDX + JOINT_VEL_SIZE
-
-    END_POS_START_IDX = JOINT_VEL_END_IDX
-    END_POS_END_IDX = END_POS_START_IDX + END_EFFECTOR_POS_SIZE
-
+    BODY_POS_START_IDX = JOINT_VEL_END_IDX
+    BODY_POS_END_IDX = BODY_POS_START_IDX + BODY_POS_SIZE
+    BODY_QUAT_START_IDX = BODY_POS_END_IDX
+    BODY_QUAT_END_IDX = BODY_QUAT_START_IDX + BODY_QUAT_SIZE
+    BODY_LIN_VEL_START_IDX = BODY_QUAT_END_IDX
+    BODY_LIN_VEL_END_IDX = BODY_LIN_VEL_START_IDX + BODY_LIN_VEL_SIZE
+    BODY_ANG_VEL_START_IDX = BODY_LIN_VEL_END_IDX
+    BODY_ANG_VEL_END_IDX = BODY_ANG_VEL_START_IDX + BODY_ANG_VEL_SIZE
+    JOINT_POS_START_MUJOCO_IDX = BODY_ANG_VEL_END_IDX
+    JOINT_POS_END_MUJOCO_IDX = JOINT_POS_START_MUJOCO_IDX+ JOINT_POS_MUJOCO_SIZE
+    JOINT_VEL_START_MUJOCO_IDX = JOINT_POS_END_MUJOCO_IDX
+    JOINT_VEL_END_MUJOCO_IDX= JOINT_VEL_START_MUJOCO_IDX + JOINT_VEL_MUJOCO_SIZE
+    joint_mujoco_select = [
+        0, 1, 2, 3, 4, 5, 
+        6, 7, 8, 9, 10, 11,
+        12, 13, 14, 15,
+        16, 17, 18, 19
+    ]
+    
+    S_JOINT_POS_SIZE = 20
+    S_JOINT_VEL_SIZE = 20
+    S_END_EFFECTOR_POS_SIZE = 45 # n*15
+    S_JOINT_POSE_START_IDX = 0
+    S_JOINT_POSE_END_IDX = S_JOINT_POSE_START_IDX + S_JOINT_POS_SIZE
+    S_JOINT_VEL_START_IDX = S_JOINT_POSE_END_IDX
+    S_JOINT_VEL_END_IDX = S_JOINT_VEL_START_IDX + S_JOINT_VEL_SIZE
+    S_END_POS_START_IDX = S_JOINT_VEL_END_IDX
+    S_END_POS_END_IDX = S_END_POS_START_IDX + S_END_EFFECTOR_POS_SIZE
+    
     def __init__(
         self,
         device,
+        body_names: Sequence[str],
+        anchor_name: str,
+        all_body_names: Sequence[str],
         time_between_frames,
-        data_dir="",
         preload_transitions=False,
         num_preload_transitions=1000000,
         motion_files=glob.glob("datasets/motion_amp_expert/*"),
@@ -54,7 +91,10 @@ class AMPLoader:
         """
         self.device = device
         self.time_between_frames = time_between_frames
-
+        all_names_list = list(all_body_names)
+        self.body_select = [all_names_list.index(n) for n in body_names]
+        print(self.body_select)
+        self.anchor_idx = all_names_list.index(anchor_name)
         # Values to store for each trajectory.
         self.trajectories = []
         self.trajectories_full = []
@@ -71,28 +111,79 @@ class AMPLoader:
                 motion_json = json.load(f)
                  # 腰部D32不动， 髋关节hip roll, ankle roll不动
                 # motion_data = np.array(motion_json["Frames"])
-                motion_data1 = np.array(motion_json["Frames"])
-                motion_data = motion_data1[:, [0, 1, 2, 3, 4, 5, 
-                                               6, 7, 8, 9, 10, 11,
-                                               12, 13, 14,
-                                               15, 18, #  16, 17,
-                                               19, 22,  #  20, 21,
-                                               
-                                               23, 24, 25, 26, 27, 28, 
-                                               29, 30, 31, 32, 33, 34,
-                                               35, 36, 37,
-                                               38, 41, # 39, 40, 
-                                               42, 45, # 43, 44, 
-                                               
-                                            #    46, 47, 48, 49, 50, 51,
-                                               52, 53, 54, 55, 56, 57,
-                                               ]]
+                motion_data1 = torch.tensor( motion_json["Frames"], dtype=torch.float32, device=device)
+                body_pos_w = motion_data1[:, AMPLoader.BODY_POS_START_IDX:AMPLoader.BODY_POS_END_IDX].reshape(-1, AMPLoader.BODY_SIZE, 3)
+                body_quat_w = motion_data1[:, AMPLoader.BODY_QUAT_START_IDX:AMPLoader.BODY_QUAT_END_IDX].reshape(-1, AMPLoader.BODY_SIZE, 4)
+                body_lin_vel_w = motion_data1[:, AMPLoader.BODY_LIN_VEL_START_IDX:AMPLoader.BODY_LIN_VEL_END_IDX].reshape(-1, AMPLoader.BODY_SIZE, 3)
+                body_ang_vel_w = motion_data1[:, AMPLoader.BODY_ANG_VEL_START_IDX:AMPLoader.BODY_ANG_VEL_END_IDX].reshape(-1, AMPLoader.BODY_SIZE, 3)
+                joint_pos_mujoco = motion_data1[:, AMPLoader.JOINT_POS_START_MUJOCO_IDX:AMPLoader.JOINT_POS_END_MUJOCO_IDX]
+                joint_vel_mujoco = motion_data1[:, AMPLoader.JOINT_VEL_START_MUJOCO_IDX:AMPLoader.JOINT_VEL_END_MUJOCO_IDX]
+                
+                time_step_total = joint_pos_mujoco.shape[0]
+                select_num_bodies = len(self.body_select)
+                select_body_pos_b = torch.zeros((time_step_total, select_num_bodies, 3), dtype=torch.float32, device=device)
+                select_body_quat_b = torch.zeros((time_step_total, select_num_bodies, 4), dtype=torch.float32, device=device)
+                select_body_ori_b = torch.zeros((time_step_total, select_num_bodies, 6), dtype=torch.float32, device=device)
+                select_body_lin_vel_b = torch.zeros((time_step_total, select_num_bodies, 3), dtype=torch.float32, device=device)
+                select_body_ang_vel_b = torch.zeros((time_step_total, select_num_bodies, 3), dtype=torch.float32, device=device)
+                
+                for frame_idx in range(time_step_total):
+                    # 获取当前帧的anchor和body数据
+                    tgt_anchor_pos_w = body_pos_w[frame_idx, self.anchor_idx, :].squeeze().unsqueeze(0).repeat(select_num_bodies, 1)
+                    tgt_anchor_quat_w = body_quat_w[frame_idx, self.anchor_idx, :].squeeze().unsqueeze(0).repeat(select_num_bodies, 1)
+                    tgt_body_pos_w = body_pos_w[frame_idx, self.body_select, :]
+                    tgt_body_quat_w = body_quat_w[frame_idx, self.body_select, :]
+                    tgt_body_lin_vel_w = body_lin_vel_w[frame_idx, self.body_select, :]
+                    tgt_body_ang_vel_w = body_ang_vel_w[frame_idx, self.body_select, :]
+                    
+                    # 计算body相对于anchor的位置和姿态 (局部坐标系)
+                    tgt_robot_body_pos_b, tgt_robot_body_quat_b = (
+                        math_utils.subtract_frame_transforms(
+                            tgt_anchor_pos_w,
+                            tgt_anchor_quat_w,
+                            tgt_body_pos_w,
+                            tgt_body_quat_w,
+                        )
+                    )
+
+                    # 将姿态四元数转换为旋转矩阵的前两列
+                    mat = math_utils.matrix_from_quat(tgt_robot_body_quat_b)
+                    tgt_robot_body_ori_b = mat[..., :, :2].reshape(select_num_bodies, 6)
+
+                    # 将速度转换到每个body自己的局部坐标系
+                    tgt_body_lin_vel_b = math_utils.quat_apply_inverse(
+                        tgt_body_quat_w,
+                        tgt_body_lin_vel_w,
+                    )
+
+                    tgt_body_ang_vel_b = math_utils.quat_apply_inverse(
+                        tgt_body_quat_w,
+                        tgt_body_ang_vel_w,
+                    )
+
+                    # 存储当前帧的局部坐标系数据
+                    select_body_pos_b[frame_idx] = tgt_robot_body_pos_b
+                    select_body_quat_b[frame_idx] = tgt_robot_body_quat_b
+                    select_body_ori_b[frame_idx] = tgt_robot_body_ori_b
+                    select_body_lin_vel_b[frame_idx] = tgt_body_lin_vel_b
+                    select_body_ang_vel_b[frame_idx] = tgt_body_ang_vel_b
+                    
+                motion_data = np.concatenate([
+                    joint_pos_mujoco[:, AMPLoader.joint_mujoco_select].cpu().numpy(), # N
+                    joint_vel_mujoco[:, AMPLoader.joint_mujoco_select].cpu().numpy(), # N
+                    select_body_pos_b.flatten(start_dim=1).cpu().numpy(), # 3*N
+                    # select_body_quat_b.flatten(start_dim=1).cpu().numpy(), # 4*N
+                    select_body_ori_b.flatten(start_dim=1).cpu().numpy(), # 6*N
+                    select_body_lin_vel_b.flatten(start_dim=1).cpu().numpy(), # 3*N
+                    select_body_ang_vel_b.flatten(start_dim=1).cpu().numpy(), # 3*N
+                ], axis=1)
+                print(motion_data.shape)
                 # Remove first 7 observation dimensions (root_pos and root_orn).
                 self.trajectories.append(
-                    torch.tensor(motion_data[:, : AMPLoader.END_POS_END_IDX], dtype=torch.float32, device=device)
+                    torch.tensor(motion_data[:, : AMPLoader.S_END_POS_END_IDX], dtype=torch.float32, device=device)
                 )
                 self.trajectories_full.append(
-                    torch.tensor(motion_data[:, : AMPLoader.END_POS_END_IDX], dtype=torch.float32, device=device)
+                    torch.tensor(motion_data[:, : AMPLoader.S_END_POS_END_IDX], dtype=torch.float32, device=device)
                 )
                 self.trajectory_idxs.append(i)
                 self.trajectory_weights.append(float(motion_json["MotionWeight"]))
@@ -193,19 +284,19 @@ class AMPLoader:
         n = self.trajectory_num_frames[traj_idxs]
         idx_low, idx_high = np.floor(p * n).astype(np.int64), np.ceil(p * n).astype(np.int64)
         all_frame_amp_starts = torch.zeros(
-            len(traj_idxs), AMPLoader.END_POS_END_IDX - AMPLoader.JOINT_POSE_START_IDX, device=self.device
+            len(traj_idxs), AMPLoader.S_END_POS_END_IDX - AMPLoader.S_JOINT_POSE_START_IDX, device=self.device
         )
         all_frame_amp_ends = torch.zeros(
-            len(traj_idxs), AMPLoader.END_POS_END_IDX - AMPLoader.JOINT_POSE_START_IDX, device=self.device
+            len(traj_idxs), AMPLoader.S_END_POS_END_IDX - AMPLoader.S_JOINT_POSE_START_IDX, device=self.device
         )
         for traj_idx in set(traj_idxs):
             trajectory = self.trajectories_full[traj_idx]
             traj_mask = traj_idxs == traj_idx
             all_frame_amp_starts[traj_mask] = trajectory[idx_low[traj_mask]][
-                :, AMPLoader.JOINT_POSE_START_IDX : AMPLoader.END_POS_END_IDX
+                :, AMPLoader.S_JOINT_POSE_START_IDX : AMPLoader.S_END_POS_END_IDX
             ]
             all_frame_amp_ends[traj_mask] = trajectory[idx_high[traj_mask]][
-                :, AMPLoader.JOINT_POSE_START_IDX : AMPLoader.END_POS_END_IDX
+                :, AMPLoader.S_JOINT_POSE_START_IDX : AMPLoader.S_END_POS_END_IDX
             ]
         blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float32).unsqueeze(-1)
 
@@ -258,8 +349,8 @@ class AMPLoader:
         for _ in range(num_mini_batch):
             if self.preload_transitions:
                 idxs = np.random.choice(self.preloaded_s.shape[0], size=mini_batch_size)
-                s = self.preloaded_s[idxs, AMPLoader.JOINT_POSE_START_IDX : AMPLoader.END_POS_END_IDX]
-                s_next = self.preloaded_s_next[idxs, AMPLoader.JOINT_POSE_START_IDX : AMPLoader.END_POS_END_IDX]
+                s = self.preloaded_s[idxs, AMPLoader.S_JOINT_POSE_START_IDX : AMPLoader.S_END_POS_END_IDX]
+                s_next = self.preloaded_s_next[idxs, AMPLoader.S_JOINT_POSE_START_IDX : AMPLoader.S_END_POS_END_IDX]
             else:
                 s, s_next = [], []
                 traj_idxs = self.weighted_traj_idx_sample_batch(mini_batch_size)
@@ -282,10 +373,10 @@ class AMPLoader:
         return len(self.trajectory_names)
 
     def get_joint_pose(pose):
-        return pose[AMPLoader.JOINT_POSE_START_IDX : AMPLoader.JOINT_POSE_END_IDX]
+        return pose[AMPLoader.S_JOINT_POSE_START_IDX : AMPLoader.JOINT_POSE_END_IDX]
 
     def get_joint_pose_batch(poses):
-        return poses[:, AMPLoader.JOINT_POSE_START_IDX : AMPLoader.JOINT_POSE_END_IDX]
+        return poses[:, AMPLoader.S_JOINT_POSE_START_IDX : AMPLoader.JOINT_POSE_END_IDX]
 
     def get_joint_vel(pose):
         return pose[AMPLoader.JOINT_VEL_START_IDX : AMPLoader.JOINT_VEL_END_IDX]
@@ -294,7 +385,7 @@ class AMPLoader:
         return poses[:, AMPLoader.JOINT_VEL_START_IDX : AMPLoader.JOINT_VEL_END_IDX]
 
     def get_end_pos(pose):
-        return pose[AMPLoader.END_POS_START_IDX : AMPLoader.END_POS_END_IDX]
+        return pose[AMPLoader.END_POS_START_IDX : AMPLoader.S_END_POS_END_IDX]
 
     def get_end_pos_batch(poses):
-        return poses[:, AMPLoader.END_POS_START_IDX : AMPLoader.END_POS_END_IDX]
+        return poses[:, AMPLoader.END_POS_START_IDX : AMPLoader.S_END_POS_END_IDX]

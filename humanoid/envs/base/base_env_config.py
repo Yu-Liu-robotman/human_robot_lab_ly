@@ -125,8 +125,8 @@ class BaseEnvCfg:
                 params={
                     "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
                     "static_friction_range": (0.6, 1.0),
-                    "dynamic_friction_range": (0.4, 0.8),
-                    "restitution_range": (0.0, 0.005),
+                    "dynamic_friction_range": (0.4, 1.0),
+                    "restitution_range": (0.0, 0.0),
                     "num_buckets": 64,
                 },
             ),
@@ -155,10 +155,10 @@ class BaseEnvCfg:
                 },
             ),
             reset_robot_joints=EventTerm(
-                func=mdp.reset_joints_by_scale,
+                func=mdp.reset_joints_by_offset,
                 mode="reset",
                 params={
-                    "position_range": (0.5, 1.5),
+                    "position_range": (-0.2, 0.2),
                     "velocity_range": (0.0, 0.0),
                 },
             ),
