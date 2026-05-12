@@ -96,7 +96,7 @@ def train():
 
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
-    mjcf_file = f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/t1pro/mjcf/{agent_cfg.experiment_name.split('_')[0]}.xml"
+    mjcf_file = f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/t2pro/mjcf/{agent_cfg.experiment_name.split('_')[0]}.xml"
     save_sim2sim_cfg(runner.log_dir, mjcf_file)
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
 

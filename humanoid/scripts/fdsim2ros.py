@@ -265,25 +265,15 @@ class HumaRobotSimRos(Node):
             "joint_R_ankleR": "leg_right_ankle_roll_joint",
             "joint_R_ankleP": "leg_right_ankle_pitch_joint",
 
-            "joint_torsoy1": "torso_yaw_joint",
-            "joint_torsor": "torso_roll_joint",
-            "joint_torsop": "torso_pitch_joint",
-
             "joint_arm_left_humeralp": "arm_left_shoulder_pitch_joint",
             "joint_arm_left_humeralr": "arm_left_shoulder_roll_joint",
             "joint_arm_left_humeraly": "arm_left_shoulder_yaw_joint",
             "joint_arm_left_elbow": "arm_left_elbow_joint",
-            "joint_arm_left_wristr": "arm_left_wrist_roll_joint",
-            "joint_arm_left_wristp": "arm_left_wrist_pitch_joint",
-            "joint_arm_left_wristy": "arm_left_wrist_yaw_joint",
 
             "joint_arm_right_humeralp": "arm_right_shoulder_pitch_joint",
             "joint_arm_right_humeralr": "arm_right_shoulder_roll_joint",
             "joint_arm_right_humeraly": "arm_right_shoulder_yaw_joint",
             "joint_arm_right_elbow": "arm_right_elbow_joint",
-            "joint_arm_right_wristr": "arm_right_wrist_roll_joint",
-            "joint_arm_right_wristp": "arm_right_wrist_pitch_joint",
-            "joint_arm_right_wristy": "arm_right_wrist_yaw_joint",
         }
 
         dof_names = []
@@ -324,44 +314,26 @@ class HumaRobotSimRos(Node):
         self.default_joint_pos = param['default_joint_pos']
         print("self.default_joint_pos:", self.default_joint_pos)
         self.all_default_joint_pos = [
-            # 0.0, 0.0, 0.109, 0.2, 0.0, 0.091,
-            # 0.0, 0.0, 0.109, 0.2, 0.0, 0.091,
             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0,
-            -0.1, 0.2, 0, -1.2, 0, 0, 0,
-            -0.1, 0.2, 0, -1.2, 0, 0, 0
+            0.2, 0.2, 0, 1.4,
+            0.2, -0.2, 0, 1.4, 
         ]
         print("self.all_default_joint_pos:", self.all_default_joint_pos)
-        # kps = [120., 250., 700., 350, 60., 150.,
-        #     120., 250., 700., 350, 60., 150.,
-        #     120., 250., 700.,
-        #     90, 90, 120, 75, 100, 100, 100,
-        #     90, 90, 120, 75, 100, 100, 100,
-        #     ]
-        # kds = [ 5, 12.0, 40, 18, 3, 8,
-        #         5, 12.0, 40, 18, 3, 8,
-        #         5, 12.0, 40,
-        #         5, 5, 7, 3.5, 10, 10, 10,
-        #         5, 5, 7, 3.5, 10, 10, 10
-        #     ]
-        kps = [250., 200., 1000., 420, 80., 150.,
-               250., 200., 1000., 420., 80., 150.,
-               250, 200, 1000,
-            100, 120, 60, 60, 100, 100, 100,
-            100, 120, 60, 60, 100, 100, 100,
+        kps = [100., 100., 100., 150, 40., 40.,
+               100., 100., 100., 150, 40., 40.,
+               40, 40, 40, 40,
+               40, 40, 40, 40
             ]
-        kds = [ 12, 12.0, 50, 23, 4, 7.5,
-                12, 12.0, 50, 23, 4, 7.5,
-                12, 12.0, 50,
-                9, 12, 3.5, 3.5, 10, 10, 10,
-                9, 12, 3.5, 3.5, 10, 10, 10,
+        kds = [ 2, 2, 2, 4, 2, 2,
+                2, 2, 2, 4, 2, 2,
+                1, 1, 1, 1,
+                1, 1, 1, 1
             ]
-        tau_limit = [80, 100, 200, 150, 40, 80,
-                    80, 100, 200, 150, 40, 80,
-                    80, 100, 200,
-                    50, 50, 50, 50, 50, 50, 50,
-                    50, 50, 50, 50, 50, 50, 50
+        tau_limit = [150, 80, 80, 150, 50, 30,
+                     150, 80, 80, 150, 50, 30,
+                     50, 50, 50, 50,
+                     50, 50, 50, 50,
                     ]
         pd_kps = np.array(kps, dtype=np.double)
         pd_kds = np.array(kds, dtype=np.double)
@@ -670,7 +642,7 @@ if __name__ == '__main__':
     if args.experiment_name is not None:
         experiment_name = args.experiment_name
     else:
-        experiment_name = 't1pro_flat'
+        experiment_name = 't2pro_flat'
     
     if args.load_run is not None:
         load_run = args.load_run
