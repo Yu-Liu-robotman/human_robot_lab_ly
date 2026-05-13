@@ -143,10 +143,10 @@ class EventCfg:
         },
     )
     reset_robot_joints=EventTerm(
-        func=mdp.reset_joints_by_offset,
+        func=mdp.reset_joints_by_scale,
         mode="reset",
         params={
-            "position_range": (-0.2, 0.2),
+            "position_range": (0.8, 1.2),
             "velocity_range": (0.0, 0.0),
         },
     )
