@@ -71,16 +71,16 @@ class T2proRewardCfg(RewardCfg):
     #     "command_threshold": 0.1,
     #     "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
     #   },)
-    feet_clearance = RewTerm(
-        func=mdp.leglab_feet_clearance, 
-        weight=1.0,
-        params={
-            "std": 0.05,
-            "tanh_mult": 2.0,
-            "target_height": 0.10,
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-        },
-    )
+    # feet_clearance = RewTerm(
+    #     func=mdp.leglab_feet_clearance, 
+    #     weight=1.0,
+    #     params={
+    #         "std": 0.05,
+    #         "tanh_mult": 2.0,
+    #         "target_height": 0.10,
+    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+    #     },
+    # )
 
     feet_air_time = RewTerm(
         func=mdp.leglab_feet_air_time_positive_biped,
@@ -128,24 +128,24 @@ class T2proRewardCfg(RewardCfg):
         params={"sensor_cfg": SceneEntityCfg("contact_sensor", body_names=[".*ankle_roll.*"])},
     )
     
-    joint_deviation_hip = RewTerm(
-        func=mdp.joint_deviation_l1,
-        weight=-0.15,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[".*_hip_yaw.*", ".*_hip_roll.*", ".*_shoulder_pitch.*", ".*elbow.*"]
-            )
-        },
-    )
-    joint_deviation_arms = RewTerm(
-        func=mdp.joint_deviation_l1,
-        weight=-0.5,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*"]
-            )
-        },
-    )
+    # joint_deviation_hip = RewTerm(
+    #     func=mdp.joint_deviation_l1,
+    #     weight=-0.15,
+    #     params={
+    #         "asset_cfg": SceneEntityCfg(
+    #             "robot", joint_names=[".*_hip_yaw.*", ".*_hip_roll.*", ".*_shoulder_pitch.*", ".*elbow.*"]
+    #         )
+    #     },
+    # )
+    # joint_deviation_arms = RewTerm(
+    #     func=mdp.joint_deviation_l1,
+    #     weight=-0.5,
+    #     params={
+    #         "asset_cfg": SceneEntityCfg(
+    #             "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*"]
+    #         )
+    #     },
+    # )
     ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0005)
     ankle_action = RewTerm(func=mdp.ankle_action, weight=-0.001)
     # hip_roll_action = RewTerm(func=mdp.hip_roll_action, weight=-1.0)
@@ -184,25 +184,25 @@ class T2proRewardCfg(RewardCfg):
     )
 
     # Swing foot height control - 控制抬腿高度
-    feet_swing_height = RewTerm(
-        func=mdp.dwaq_feet_swing_height,
-        weight=-0.2,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-            "target_height": 0.10,
-        },
-    )
-    double_support_penalize = RewTerm(
-        func=mdp.double_support_penalize,
-        weight=-0.5,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "command_threshold": 0.1,
-            "max_ds_time": 0.1,
-            "force_threshold": 5.0,
-        },
-    )
+    # feet_swing_height = RewTerm(
+    #     func=mdp.dwaq_feet_swing_height,
+    #     weight=-0.2,
+    #     params={
+    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+    #         "target_height": 0.10,
+    #     },
+    # )
+    # double_support_penalize = RewTerm(
+    #     func=mdp.double_support_penalize,
+    #     weight=-0.5,
+    #     params={
+    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+    #         "command_threshold": 0.1,
+    #         "max_ds_time": 0.1,
+    #         "force_threshold": 5.0,
+    #     },
+    # )
     
 @configclass
 class T2proFlatEnvCfg(BaseEnvCfg):
@@ -219,7 +219,7 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         self.robot.terminate_contacts_body_names = ["base_link"]
         self.robot.feet_body_names = [".*ankle_roll.*"]
         self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = ["base_link"]
-        self.commands.ranges.lin_vel_x = (-0.6, 1.0)
+        self.commands.ranges.lin_vel_x = (-0.6, 1.5)
         self.commands.ranges.lin_vel_y = (-0.5, 0.5)
         self.commands.ranges.ang_vel_z = (-1.57, 1.57)
         self.commands.ranges.heading_command = False
@@ -349,9 +349,9 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/stand11-0511.txt"
                         ]
     amp_num_preload_transitions = 200000
-    amp_task_reward_lerp = 0.7
+    amp_task_reward_lerp = 0.5
     amp_discr_hidden_dims = [1024, 512, 256]
-    min_normalized_std = [0.05] * 23
+    min_normalized_std = [0.05] * 20
     amp_body_names=KEY_POS_LIST
     amp_anchor_name=ANCHOR_NAME
     

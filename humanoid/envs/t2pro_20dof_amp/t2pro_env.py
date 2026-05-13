@@ -14,7 +14,7 @@ from isaaclab.utils.buffers import CircularBuffer, DelayBuffer
 from isaaclab.utils.math import quat_apply, quat_conjugate, quat_rotate
 from scipy.spatial.transform import Rotation
 
-from humanoid.envs.t2pro_20dof_amp.t2pro_config import T2proFlatEnvCfg
+from humanoid.envs.t2pro_20dof_amp.t2pro_config import T2proFlatEnvCfg, T2proAmpFlatEnvCfg
 from humanoid.utils.env_utils.scene import SceneCfg
 from humanoid.envs.base.base_env import BaseEnv
 import isaaclab.utils.math as math_utils
@@ -56,12 +56,12 @@ class T2proEnv(BaseEnv):
     def __init__(
         self,
         cfg: (
-            T2proFlatEnvCfg
+            T2proFlatEnvCfg | T2proAmpFlatEnvCfg
         ),
         headless,
     ):
         self.cfg: (
-            T2proFlatEnvCfg
+            T2proFlatEnvCfg | T2proAmpFlatEnvCfg
         )
 
         self.cfg = cfg
@@ -434,7 +434,7 @@ class T2proEnv(BaseEnv):
         torso_position = self.robot.data.root_pos_w[:, :3]
         torso_position = torso_position[:, 2].view(-1, 1)
         # self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
-        reset_buf = torch.any(torso_position < 0.3, dim=1)
+        reset_buf = torch.any(torso_position < 0.2, dim=1)
 
         reset_buf |= torch.any(
             torch.max(
