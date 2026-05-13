@@ -66,7 +66,7 @@ class AMPLoader:
     
     S_JOINT_POS_SIZE = 20
     S_JOINT_VEL_SIZE = 20
-    S_END_EFFECTOR_POS_SIZE = 45 # n*15
+    S_END_EFFECTOR_POS_SIZE = 162 # n*15
     S_JOINT_POSE_START_IDX = 0
     S_JOINT_POSE_END_IDX = S_JOINT_POSE_START_IDX + S_JOINT_POS_SIZE
     S_JOINT_VEL_START_IDX = S_JOINT_POSE_END_IDX
@@ -126,7 +126,9 @@ class AMPLoader:
                 select_body_ori_b = torch.zeros((time_step_total, select_num_bodies, 6), dtype=torch.float32, device=device)
                 select_body_lin_vel_b = torch.zeros((time_step_total, select_num_bodies, 3), dtype=torch.float32, device=device)
                 select_body_ang_vel_b = torch.zeros((time_step_total, select_num_bodies, 3), dtype=torch.float32, device=device)
-                
+                select_root_ori = torch.zeros((time_step_total, 6), dtype=torch.float32, device=device,)
+                select_root_lin_vel_b = torch.zeros((time_step_total, 3), dtype=torch.float32, device=device,)
+                select_root_ang_vel_b = torch.zeros((time_step_total, 3), dtype=torch.float32, device=device,)
                 for frame_idx in range(time_step_total):
                     # 获取当前帧的anchor和body数据
                     tgt_anchor_pos_w = body_pos_w[frame_idx, self.anchor_idx, :].squeeze().unsqueeze(0).repeat(select_num_bodies, 1)
@@ -161,16 +163,43 @@ class AMPLoader:
                         tgt_body_ang_vel_w,
                     )
 
+                    root_rot_mat = math_utils.matrix_from_quat(
+                        tgt_anchor_quat_w[0].unsqueeze(0)
+                    )[0]
+
+                    tgt_root_ori = root_rot_mat[:, :2].reshape(6)
+                    
+                    tgt_root_lin_vel_w = body_lin_vel_w[frame_idx, self.anchor_idx, :]
+                    tgt_root_ang_vel_w = body_ang_vel_w[frame_idx, self.anchor_idx, :]
+                    
+                    # root local velocity (body frame)
+                    tgt_root_lin_vel_b = math_utils.quat_apply_inverse(
+                        tgt_anchor_quat_w[0],
+                        tgt_root_lin_vel_w,
+                    )
+                    tgt_root_lin_vel_w = body_lin_vel_w[frame_idx, self.anchor_idx, :]
+
+                    tgt_root_ang_vel_b = math_utils.quat_apply_inverse(
+                        tgt_anchor_quat_w[0],
+                        tgt_root_ang_vel_w,
+                    )
+                    
                     # 存储当前帧的局部坐标系数据
                     select_body_pos_b[frame_idx] = tgt_robot_body_pos_b
                     select_body_quat_b[frame_idx] = tgt_robot_body_quat_b
                     select_body_ori_b[frame_idx] = tgt_robot_body_ori_b
                     select_body_lin_vel_b[frame_idx] = tgt_body_lin_vel_b
                     select_body_ang_vel_b[frame_idx] = tgt_body_ang_vel_b
+                    select_root_ori[frame_idx] = tgt_root_ori
+                    select_root_lin_vel_b[frame_idx] = tgt_root_lin_vel_b
+                    select_root_ang_vel_b[frame_idx] = tgt_root_ang_vel_b
                     
                 motion_data = np.concatenate([
                     joint_pos_mujoco[:, AMPLoader.joint_mujoco_select].cpu().numpy(), # N
                     joint_vel_mujoco[:, AMPLoader.joint_mujoco_select].cpu().numpy(), # N
+                    select_root_ori.cpu().numpy(),
+                    select_root_lin_vel_b.cpu().numpy(),
+                    select_root_ang_vel_b.cpu().numpy(),
                     select_body_pos_b.flatten(start_dim=1).cpu().numpy(), # 3*N
                     # select_body_quat_b.flatten(start_dim=1).cpu().numpy(), # 4*N
                     select_body_ori_b.flatten(start_dim=1).cpu().numpy(), # 6*N

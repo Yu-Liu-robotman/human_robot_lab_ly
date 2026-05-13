@@ -555,10 +555,28 @@ class T2proEnv(BaseEnv):
             tgt_body_quat_w,
             tgt_body_ang_vel_w,
         )
+
+        root_rot_mat = math_utils.matrix_from_quat(
+            self.robot.data.root_quat_w
+        )
+
+        root_ori = root_rot_mat[..., :, :2].reshape(self.num_envs, 6)
+        root_lin_vel_b = math_utils.quat_apply_inverse(
+            self.robot.data.root_quat_w,
+            self.robot.data.root_lin_vel_w,
+        )
+
+        root_ang_vel_b = math_utils.quat_apply_inverse(
+            self.robot.data.root_quat_w,
+            self.robot.data.root_ang_vel_w,
+        )
         amp_obs = torch.cat(
             (
                 joint_pos,
                 joint_vel,
+                root_ori,
+                root_lin_vel_b,
+                root_ang_vel_b,
                 tgt_robot_body_pos_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
                 tgt_robot_body_ori_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
                 tgt_body_lin_vel_b.reshape(tgt_robot_body_pos_b.shape[0], -1),

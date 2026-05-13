@@ -26,23 +26,23 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
 )
 from humanoid.mdp.symmetry import t2pro_20dof
 KEY_POS_LIST=[
-    "base_link",
-    #"leg_left_hip_pitch_link",
-    #"leg_right_hip_pitch_link",
-    #"leg_left_knee_link",
-    #"leg_right_knee_link",
-    # "arm_left_shoulder_yaw_link",
-    # "arm_right_shoulder_yaw_link",
-    # "arm_left_elbow_link",
-    # "arm_right_elbow_link",
+    "leg_left_hip_pitch_link",
+    "leg_right_hip_pitch_link",
+    "leg_left_knee_link",
+    "leg_right_knee_link",
     "leg_left_ankle_roll_link",
-    "leg_right_ankle_roll_link"
+    "leg_right_ankle_roll_link",
+    "arm_left_shoulder_yaw_link",
+    "arm_right_shoulder_yaw_link",
+    "arm_left_elbow_link",
+    "arm_right_elbow_link",
+
 ]
 ANCHOR_NAME = "base_link"
 @configclass
 class T2proRewardCfg(RewardCfg):
-    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_yaw_frame_exp, weight=2.0, params={"std": 0.5})
-    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_world_exp, weight=2.0, params={"std": 0.5})
+    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=1.5, params={"std": 0.25})
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=1.5, params={"std": 0.25})
     ang_vel_xy_l2 = RewTerm(func=mdp.mjlab_body_angular_velocity_penalty, weight=-0.05,  params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link")},)
     energy = RewTerm(func=mdp.energy, weight=-1e-3)
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
@@ -349,7 +349,7 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/stand11-0511.txt"
                         ]
     amp_num_preload_transitions = 200000
-    amp_task_reward_lerp = 0.5
+    amp_task_reward_lerp = 0.7
     amp_discr_hidden_dims = [1024, 512, 256]
     min_normalized_std = [0.05] * 20
     amp_body_names=KEY_POS_LIST

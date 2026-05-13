@@ -202,5 +202,7 @@ def _switch_joints_left_right(joint_data: torch.Tensor) -> torch.Tensor:
     # right <-- left
     joint_data_switched[..., 6:12] = joint_data[..., 0:6]
     joint_data_switched[..., 16:20] = joint_data[..., 12:16]
+
+    joint_data_switched[..., [1, 2, 5, 7, 8, 11, 13, 14, 17, 18]] = -1 * joint_data_switched[..., [1, 2, 5, 7, 8, 11, 13, 14, 17, 18]]
     
     return joint_data_switched
