@@ -145,12 +145,12 @@ class BaseEnvCfg:
                 params={
                     "pose_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5), "yaw": (-3.14, 3.14)},
                     "velocity_range": {
-                        "x": (-0.2, 0.2),
-                        "y": (-0.2, 0.2),
-                        "z": (-0.2, 0.2),
-                        "roll": (-0.2, 0.2),
-                        "pitch": (-0.2, 0.2),
-                        "yaw": (-0.2, 0.2),
+                        "x": (-0.5, 0.5),
+                        "y": (-0.5, 0.5),
+                        "z": (-0.5, 0.5),
+                        "roll": (-0.5, 0.5),
+                        "pitch": (-0.5, 0.5),
+                        "yaw": (-0.5, 0.5),
                     },
                 },
             ),
@@ -166,7 +166,7 @@ class BaseEnvCfg:
                 func=mdp.push_by_setting_velocity,
                 mode="interval",
                 interval_range_s=(10.0, 15.0),
-                params={"velocity_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}},
+                params={"velocity_range": {"x": (-1.0, 1.0), "y": (-1.0, 1.0)}},
             ),
             scale_joint_pd = EventTerm(
                 func=mdp.randomize_actuator_gains,
