@@ -271,7 +271,7 @@ class T2proEnv(BaseEnv):
         self.default_dof_pos = self.robot.data.default_joint_pos[:, self.dof_ids]
         
         self.obs_index_cmd = 0
-        self.obs_index_q = 3
+        self.obs_index_q = 6
         self.obs_index_qd = self.obs_index_q + self.num_actions
         self.obs_index_action = self.obs_index_q + 2 * self.num_actions
         self.obs_index_imu_waist_angvel = self.obs_index_q + 3 * self.num_actions
@@ -288,6 +288,9 @@ class T2proEnv(BaseEnv):
         self.right_contact_time = torch.zeros(self.num_envs, device=self.device)
         self.ds_time            = torch.zeros(self.num_envs, device=self.device)
         self.last_contact_mask  = torch.zeros(self.num_envs, 2, device=self.device)
+        self.stand_flag = torch.randint(0, 2, (self.num_envs, 1), device=self.device) * 2 - 1
+        self.stand_mask = torch.zeros(self.num_envs, 1, device=self.device, dtype=torch.bool)
+        self.walk_mask = torch.zeros(self.num_envs, 1, device=self.device, dtype=torch.bool)
         self.init_obs_buffer()
 
     def compute_current_observations(self):
@@ -301,9 +304,12 @@ class T2proEnv(BaseEnv):
         q = joint_pos[:, self.dof_ids]
         dq = joint_vel[:, self.dof_ids]
         action = self.action_buffer._circular_buffer.buffer[:, -1, :]
+        add_command = torch.zeros_like(command)
+        add_command[:, 0] = self.stand_flag[:, 0].clone()
         current_actor_obs = torch.cat(
             [
                 command * self.obs_scales.commands,
+                add_command, 
                 q * self.obs_scales.joint_pos,
                 dq  * self.obs_scales.joint_vel,
                 action * self.obs_scales.actions,
@@ -417,6 +423,15 @@ class T2proEnv(BaseEnv):
         
         self.episode_length_buf += 1
         self.command_generator.compute(self.step_dt)
+        
+        self.stand_mask = (
+                    (torch.abs(self.command_generator.command[:, 0]) < 0.1)
+                    & (torch.abs(self.command_generator.command[:, 1]) < 0.1)
+                    & (torch.abs(self.command_generator.command[:, 2]) < 0.02)
+                    & (self.stand_flag[:, 0] == 1.)
+                ).unsqueeze(1)
+        self.walk_mask = ~self.stand_mask
+        
         if "interval" in self.event_manager.available_modes:
             self.event_manager.apply(mode="interval", dt=self.step_dt)
 
@@ -456,7 +471,7 @@ class T2proEnv(BaseEnv):
             actor_obs, _ = self.compute_current_observations()
             noise_vec = torch.zeros_like(actor_obs[0])
             noise_scales = self.cfg.noise.noise_scales
-            noise_vec[self.obs_index_cmd: self.obs_index_cmd+3] = 0.0 # 
+            noise_vec[self.obs_index_cmd: self.obs_index_cmd+6] = 0.0 # 
             noise_vec[self.obs_index_q: self.obs_index_q+self.num_actions] = noise_scales.joint_pos * self.obs_scales.joint_pos
             noise_vec[self.obs_index_qd: self.obs_index_qd+self.num_actions] = noise_scales.joint_vel * self.obs_scales.joint_vel
             noise_vec[self.obs_index_action: self.obs_index_action+self.num_actions] = 0.0

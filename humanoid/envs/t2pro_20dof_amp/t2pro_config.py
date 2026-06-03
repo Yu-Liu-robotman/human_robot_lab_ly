@@ -83,11 +83,13 @@ class T2proRewardCfg(RewardCfg):
     # )
 
     feet_air_time = RewTerm(
-        func=mdp.leglab_feet_air_time_positive_biped,
+        func=mdp.adaptive_feet_air_time_positive_biped,
         weight=0.75,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "threshold": 0.4,
+            "low_speed_threshold": 0.4,
+            "high_speed_threshold": 0.6,
+            "stand_cmd": True,
         },
     )
     # foot_slip = RewTerm(
@@ -115,6 +117,7 @@ class T2proRewardCfg(RewardCfg):
             "threshold": 500,
             "max_reward": 400,
             "command_threshold": 0.1,
+            "stand_cmd": True,
         },
     )
     feet_too_near = RewTerm(
@@ -154,12 +157,13 @@ class T2proRewardCfg(RewardCfg):
     # torso_yaw_action = RewTerm(func=mdp.torso_yaw_action, weight=-1.0)
     stand_still_joint_deviation_l1 = RewTerm(
         func=mdp.leglab_stand_still_joint_deviation_l1,
-        weight=-0.5,
+        weight=-1.0,
         params={
             "command_threshold": 0.1,
             "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
+            "stand_cmd": True,
         },
-    )
+    ) 
     joint_torques_l2 = RewTerm(
         func=mdp.joint_torques_l2,
         weight=-2.0e-6,
@@ -193,16 +197,17 @@ class T2proRewardCfg(RewardCfg):
     #         "target_height": 0.10,
     #     },
     # )
-    # double_support_penalize = RewTerm(
-    #     func=mdp.double_support_penalize,
-    #     weight=-0.5,
-    #     params={
-    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-    #         "command_threshold": 0.1,
-    #         "max_ds_time": 0.1,
-    #         "force_threshold": 5.0,
-    #     },
-    # )
+    double_support_penalize = RewTerm(
+        func=mdp.double_support_penalize,
+        weight=-0.5,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+            "command_threshold": 0.1,
+            "max_ds_time": 0.1,
+            "force_threshold": 5.0,
+            "stand_cmd": True,
+        },
+    )
     
 @configclass
 class T2proFlatEnvCfg(BaseEnvCfg):
@@ -224,7 +229,7 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         self.commands.ranges.ang_vel_z = (-1.57, 1.57)
         self.commands.ranges.heading_command = False
         self.experiment_name = "t2pro_20dof_flat"
-        self.rl_version = 2.0
+        self.rl_version = 2.1
         self.rand_dof_nums = 0
 
 @configclass

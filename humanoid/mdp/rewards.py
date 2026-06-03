@@ -622,7 +622,7 @@ def mjlab_feet_slip(
 
 
 def mjlab_soft_landing(
-    env: BaseEnv, sensor_cfg: SceneEntityCfg, threshold: float = 500, max_reward: float = 400, command_threshold: float = 0.01
+    env: BaseEnv, sensor_cfg: SceneEntityCfg, threshold: float = 500, max_reward: float = 400, command_threshold: float = 0.01, stand_cmd: bool = False
 ) -> torch.Tensor:
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
     reward = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2].norm(dim=-1)
@@ -631,10 +631,13 @@ def mjlab_soft_landing(
     reward = reward.clamp(min=0, max=max_reward) # 惩罚上限
     command = env.command_generator.command
     if command is not None:
-      linear_norm = torch.norm(command[:, :2], dim=1)
-      angular_norm = torch.abs(command[:, 2])
-      total_command = linear_norm + angular_norm
-      active = (total_command > command_threshold).float()
+      if stand_cmd:
+        active = env.walk_mask[:, 0].float() # 站立命令时，只有walk_mask为1才惩罚
+      else:
+        linear_norm = torch.norm(command[:, :2], dim=1)
+        angular_norm = torch.abs(command[:, 2])
+        total_command = linear_norm + angular_norm
+        active = (total_command > command_threshold).float()
     return reward * active # 响应命令过程中才惩罚
 
 def leglab_feet_air_time_positive_biped(env: BaseEnv, sensor_cfg: SceneEntityCfg, threshold: float, command_threshold: float = 0.1) -> torch.Tensor:
@@ -675,16 +678,18 @@ def leglab_feet_clearance(
     return torch.exp(-torch.sum(reward, dim=1) / std)
 
 def leglab_stand_still_joint_deviation_l1(
-    env: BaseEnv, command_threshold: float = 0.1, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+    env: BaseEnv, command_threshold: float = 0.1, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"), stand_cmd: bool = False
 ) -> torch.Tensor:
     """Penalize offsets from the default joint positions when the command is very small."""
-    command = env.command_generator.command
     # Penalize motion when command is nearly zero.
-    command = env.command_generator.command
-    linear_norm = torch.norm(command[:, :2], dim=1)
-    angular_norm = torch.abs(command[:, 2])
-    total_command = linear_norm + angular_norm
-    active = (total_command < command_threshold).float()
+    if stand_cmd:
+        active = env.stand_mask[:, 0].float() # 站立命令时，只有stand_mask为1才惩罚
+    else:
+        command = env.command_generator.command
+        linear_norm = torch.norm(command[:, :2], dim=1)
+        angular_norm = torch.abs(command[:, 2])
+        total_command = linear_norm + angular_norm
+        active = (total_command < command_threshold).float()
     return joint_deviation_l1(env, asset_cfg) * active # 没速度时限制所有关节位置
 
 def double_support_Penalize(
@@ -708,6 +713,7 @@ def double_support_penalize(
     command_threshold: float = 0.01,
     max_ds_time: float = 0.08,   
     force_threshold: float = 1.0,
+    stand_cmd: bool = False,
 ) -> torch.Tensor:
     """
     Penalize long double-support duration using time instead of steps.
@@ -723,9 +729,12 @@ def double_support_penalize(
     linear_norm = torch.norm(command[:, :2], dim=1)
     angular_norm = torch.abs(command[:, 2])
     total_command = linear_norm + angular_norm
-    active = total_command > command_threshold  # 有速度
+    if stand_cmd:
+        active = env.walk_mask[:, 0].float() # 站立命令时，只有walk_mask为1才惩罚
+    else:
+        active = total_command > command_threshold  # 有速度
     long_ds = env.ds_time > max_ds_time         # 双支撑太久
-    cost = long_ds.float() * total_command * active.float() # 双支撑太久and有速度, 速度越大惩罚越大
+    cost = long_ds.float() * active.float() # 双支撑太久and有速度, 速度越大惩罚越大
     cost = cost.clamp(0.0, 1.0)
     return cost
 
@@ -996,4 +1005,39 @@ def atom_feet_slide(
         env.num_envs, -1
     )
     reward = torch.sum(foot_leteral_vel * contacts, dim=1)
+    return reward
+
+def adaptive_feet_air_time_positive_biped(env: BaseEnv, sensor_cfg: SceneEntityCfg, low_speed_threshold: float, high_speed_threshold: float, command_threshold: float = 0.1, stand_cmd: bool = False) -> torch.Tensor:
+    """Reward long steps taken by the feet for bipeds.
+
+    This function rewards the agent for taking steps up to a specified threshold and also keep one foot at
+    a time in the air.
+
+    If the commands are small (i.e. the agent is not supposed to take a step), then the reward is zero.
+    """
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    # compute the reward
+    air_time = contact_sensor.data.current_air_time[:, sensor_cfg.body_ids]
+    contact_time = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids]
+    in_contact = contact_time > 0.0
+    in_mode_time = torch.where(in_contact, contact_time, air_time)
+    single_stance = torch.sum(in_contact.int(), dim=1) == 1
+    reward = torch.min(torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0), dim=1)[0]
+    command = env.command_generator.command
+    linear_norm = torch.norm(command[:, :2], dim=1)
+    angular_norm = torch.abs(command[:, 2])
+    total_command = linear_norm + angular_norm
+    command_scale = torch.clamp((total_command - 0.3) / 1.0, 0.0, 1.0)
+    adaptive_threshold = (
+        low_speed_threshold
+        + (high_speed_threshold - low_speed_threshold)
+        * command_scale
+    )
+    reward = torch.minimum(reward, adaptive_threshold)
+    # no reward for zero command
+    if stand_cmd:
+        reward *= env.walk_mask[:, 0].float()
+    else:
+        active = (total_command > command_threshold).float()
+        reward *= active
     return reward

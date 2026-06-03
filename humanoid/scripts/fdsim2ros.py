@@ -62,7 +62,7 @@ def on_key_press(key):
     try:
         # print(key)
         ch = key.char.lower()
-        if ch not in '0123456789':
+        if ch not in '0123456789f':
             return
         keyboard_control(ch)
     except AttributeError:
@@ -358,7 +358,8 @@ class HumaRobotSimRos(Node):
                 force[:6] = force_sensor
                 # 1000hz -> 100hz
                 if count_lowlevel % cfg.sim_config.decimation == 0:
-                    print(v)
+                    print("current command: lin vel x={:.2f}, lin vel y={:.2f}, ang vel z={:.2f}, stand_flag={:.2f}".format(cmd.vx, cmd.vy, cmd.dyaw, stand_flag))  
+                    print("current velocity: lin vel x={:.2f}, lin vel y={:.2f}, ang vel z={:.2f}".format(v[0], v[1], omega[2]))
                     target_q = self.rl_policy_forward(param=param, policy=policy, q=(a_q-self.default_joint_pos), dq=a_dq, waist_orient_quat=quat,
                                                       waist_omega=omega, torque_foot=force, force_foot=force_foot,
                                                       lin_vel=lin_vel)
@@ -489,6 +490,12 @@ class HumaRobotSimRos(Node):
                cmd.vy * param['obs_scales_lin_vel'], 
                cmd.dyaw * param['obs_scales_ang_vel']]
             obs[0, param['obs_index_cmd'] : param['obs_index_cmd'] + len(command)] = command
+        elif param["rl_version"] == 2.1:
+            command = [cmd.vx * param['obs_scales_lin_vel'], 
+                    cmd.vy * param['obs_scales_lin_vel'], 
+                    cmd.dyaw * param['obs_scales_ang_vel'],
+                    stand_flag, 0, 0]
+            obs[0, param["obs_index_cmd"]: param["obs_index_cmd"]+len(command)] = command
         
         obs[0, param['obs_index_q'] : param['obs_index_q'] + len(q)] = q * param['obs_scales_dof_pos']
         obs[0, param['obs_index_qd'] : param['obs_index_qd'] + len(dq)] = dq * param['obs_scales_dof_vel']
