@@ -26,10 +26,10 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
 )
 from humanoid.mdp.symmetry import t2pro_20dof
 KEY_POS_LIST=[
-    "leg_left_hip_pitch_link",
-    "leg_right_hip_pitch_link",
-    "leg_left_knee_link",
-    "leg_right_knee_link",
+    # "leg_left_hip_pitch_link",
+    # "leg_right_hip_pitch_link",
+    # "leg_left_knee_link",
+    # "leg_right_knee_link",
     "leg_left_ankle_roll_link",
     "leg_right_ankle_roll_link",
     "arm_left_shoulder_yaw_link",
@@ -41,12 +41,25 @@ KEY_POS_LIST=[
 ANCHOR_NAME = "base_link"
 @configclass
 class T2proRewardCfg(RewardCfg):
-    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=1.5, params={"std": 0.25})
-    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=1.5, params={"std": 0.25})
+    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=2.0, params={"std": 0.25})
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=2.0, params={"std": 0.25})
+    feet_air_time = RewTerm(
+        func=mdp.adaptive_feet_air_time_positive_biped,
+        weight=1.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+            "low_speed_threshold": 0.4,
+            "high_speed_threshold": 0.6,
+            "stand_cmd": True,
+        },
+    )
+    alive = RewTerm(func=mdp.dwaq_alive, weight=0.15) 
+    
+    # 惩罚   
     ang_vel_xy_l2 = RewTerm(func=mdp.mjlab_body_angular_velocity_penalty, weight=-0.05,  params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link")},)
     energy = RewTerm(func=mdp.energy, weight=-1e-3)
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.05)
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
     dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-10.0)
     undesired_contacts = RewTerm(
         func=mdp.undesired_contacts,
@@ -58,49 +71,9 @@ class T2proRewardCfg(RewardCfg):
         weight=-1.0,
         params={"sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"), "threshold": 1.0},
     )
-    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-2.0)
+    flat_orientation_l2 = RewTerm(func=mdp.adaptive_flat_orientation_l2, weight=-1.0)
     termination_penalty = RewTerm(func=mdp.is_terminated, weight=-200.0)
-    # feet_air_time = RewTerm(
-    #     func=mdp.feet_air_time_positive_biped,
-    #     weight=0.15,
-    #     params={"sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"), "threshold": 0.4},
-    # )
-    # foot_clearance = RewTerm(func=mdp.mjlab_feet_clearance,weight=-4.0,
-    #   params={
-    #     "target_height": 0.105,
-    #     "command_threshold": 0.1,
-    #     "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-    #   },)
-    # feet_clearance = RewTerm(
-    #     func=mdp.leglab_feet_clearance, 
-    #     weight=1.0,
-    #     params={
-    #         "std": 0.05,
-    #         "tanh_mult": 2.0,
-    #         "target_height": 0.10,
-    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-    #     },
-    # )
 
-    feet_air_time = RewTerm(
-        func=mdp.adaptive_feet_air_time_positive_biped,
-        weight=0.75,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "low_speed_threshold": 0.4,
-            "high_speed_threshold": 0.6,
-            "stand_cmd": True,
-        },
-    )
-    # foot_slip = RewTerm(
-    #     func=mdp.mjlab_feet_slip,
-    #     weight=-0.5,
-    #     params={
-    #         "command_threshold": 0.1,
-    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_pitch.*"),
-    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-    #     },
-    # )
     feet_slide = RewTerm(
         func=mdp.atom_feet_slide,
         weight=-0.1,
@@ -123,38 +96,15 @@ class T2proRewardCfg(RewardCfg):
     feet_too_near = RewTerm(
         func=mdp.feet_too_near_humanoid,
         weight=-4.0,
-        params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*ankle_roll.*"]), "threshold": 0.18},
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*ankle_roll.*"]), "threshold": 0.17},
     )
     feet_stumble = RewTerm(
         func=mdp.feet_stumble,
         weight=-10.0,
         params={"sensor_cfg": SceneEntityCfg("contact_sensor", body_names=[".*ankle_roll.*"])},
     )
-    
-    # joint_deviation_hip = RewTerm(
-    #     func=mdp.joint_deviation_l1,
-    #     weight=-0.15,
-    #     params={
-    #         "asset_cfg": SceneEntityCfg(
-    #             "robot", joint_names=[".*_hip_yaw.*", ".*_hip_roll.*", ".*_shoulder_pitch.*", ".*elbow.*"]
-    #         )
-    #     },
-    # )
-    # joint_deviation_arms = RewTerm(
-    #     func=mdp.joint_deviation_l1,
-    #     weight=-0.5,
-    #     params={
-    #         "asset_cfg": SceneEntityCfg(
-    #             "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*"]
-    #         )
-    #     },
-    # )
-    ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0005)
+    ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
     ankle_action = RewTerm(func=mdp.ankle_action, weight=-0.001)
-    # hip_roll_action = RewTerm(func=mdp.hip_roll_action, weight=-1.0)
-    # hip_yaw_action = RewTerm(func=mdp.hip_yaw_action, weight=-1.0)
-    # torso_roll_action = RewTerm(func=mdp.torso_roll_action, weight=-1.0)
-    # torso_yaw_action = RewTerm(func=mdp.torso_yaw_action, weight=-1.0)
     stand_still_joint_deviation_l1 = RewTerm(
         func=mdp.leglab_stand_still_joint_deviation_l1,
         weight=-1.0,
@@ -169,11 +119,6 @@ class T2proRewardCfg(RewardCfg):
         weight=-2.0e-6,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_.*", ".*_knee_joint"])},
     )
-      
-    # ==================== DWAQ Core Rewards (from DreamWaQ) ====================
-    # Survival bonus - 使用与 HumanoidDreamWaq 一致的权重
-    # HumanoidDreamWaq 使用 alive = 0.15，较小的值避免偷懒站立
-    alive = RewTerm(func=mdp.dwaq_alive, weight=0.15)
     
     idle_penalty_lin = RewTerm(
         func=mdp.dwaq_idle_when_commanded,
@@ -184,19 +129,8 @@ class T2proRewardCfg(RewardCfg):
     idle_penalty_ang = RewTerm(
         func=mdp.dwaq_idle_when_commanded_angle,
         weight=-2.0,
-        params={"cmd_threshold": 0.1, "vel_threshold": 0.1},
+        params={"cmd_threshold": 0.02, "vel_threshold": 0.02},
     )
-
-    # Swing foot height control - 控制抬腿高度
-    # feet_swing_height = RewTerm(
-    #     func=mdp.dwaq_feet_swing_height,
-    #     weight=-0.2,
-    #     params={
-    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-    #         "target_height": 0.10,
-    #     },
-    # )
     double_support_penalize = RewTerm(
         func=mdp.double_support_penalize,
         weight=-0.5,
@@ -208,6 +142,7 @@ class T2proRewardCfg(RewardCfg):
             "stand_cmd": True,
         },
     )
+    dont_wait = RewTerm(func=mdp.dont_wait, weight=-0.5)
     
 @configclass
 class T2proFlatEnvCfg(BaseEnvCfg):
@@ -220,13 +155,14 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         self.scene.robot = T2PRO
         self.scene.terrain_type = "plane"
         # self.scene.terrain_type = "generator"
-        # self.scene.terrain_generator = GRAVEL_TERRAINS_CFG
+        # self.scene.terrain_generator = ROUGH_TERRAINS_CFG
         self.robot.terminate_contacts_body_names = ["base_link"]
         self.robot.feet_body_names = [".*ankle_roll.*"]
         self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = ["base_link"]
         self.commands.ranges.lin_vel_x = (-0.6, 1.5)
-        self.commands.ranges.lin_vel_y = (-0.5, 0.5)
-        self.commands.ranges.ang_vel_z = (-1.57, 1.57)
+        self.commands.ranges.lin_vel_y = (-0.6, 0.6)
+        self.commands.ranges.ang_vel_z = (-1.0, 1.0)
+        self.commands.ranges.resampling_time_range = (4.0, 10.0)
         self.commands.ranges.heading_command = False
         self.experiment_name = "t2pro_20dof_flat"
         self.rl_version = 2.1
@@ -234,8 +170,6 @@ class T2proFlatEnvCfg(BaseEnvCfg):
 
 @configclass
 class T2proFlatAgentCfg(BaseAgentCfg):
-    experiment_name: str = "t2pro_20dof_flat"
-    wandb_project: str = "t2pro_20dof_flat"
     def __post_init__(self):
         super().__post_init__()
         self.algorithm.symmetry_cfg = RslRlSymmetryCfg(
@@ -244,10 +178,11 @@ class T2proFlatAgentCfg(BaseAgentCfg):
             mirror_loss_coeff=0.1, 
             data_augmentation_func=t2pro_20dof.compute_symmetric_states
         )
+        self.experiment_name = "t2pro_20dof_flat"
+        self.wandb_project = "t2pro_20dof_flat"
 
 @configclass
 class T2proRoughEnvCfg(T2proFlatEnvCfg):
-    experiment_name: str = "t2pro_20dof_rough"
     def __post_init__(self):
         super().__post_init__()
         self.scene.height_scanner.enable_height_scan = True
@@ -258,6 +193,8 @@ class T2proRoughEnvCfg(T2proFlatEnvCfg):
         self.reward.track_lin_vel_xy_exp.weight = 1.5
         self.reward.track_ang_vel_z_exp.weight = 1.5
         # self.reward.lin_vel_z_l2.weight = -0.25
+        self.experiment_name = "t2pro_20dof_rough"
+        
 @configclass
 class T2proRoughAgentCfg(BaseAgentCfg):
     experiment_name: str = "t2pro_20dof_rough"
@@ -273,7 +210,9 @@ class T2proRoughAgentCfg(BaseAgentCfg):
         self.policy.rnn_type = "lstm"
         
 class T2proAmpFlatEnvCfg(T2proFlatEnvCfg):
-    experiment_name: str = "t2pro_20dof_amp_flat"
+    def __post_init__(self):
+        super().__post_init__()
+        self.experiment_name = "t2pro_20dof_amp_flat"
 @configclass
 class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     seed = 42
@@ -304,13 +243,7 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
         normalize_advantage_per_mini_batch=False,
-        symmetry_cfg=None,  # RslRlSymmetryCfg()
-        # symmetry_cfg = RslRlSymmetryCfg(
-        #     use_data_augmentation=True,
-        #     use_mirror_loss=True,
-        #     mirror_loss_coeff=0.1, 
-        #     data_augmentation_func=t1pro.compute_symmetric_states
-        # ),
+        symmetry_cfg=None,  
         rnd_cfg=None,  # RslRlRndCfg()
     )
     clip_actions = None
@@ -361,11 +294,15 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     amp_anchor_name=ANCHOR_NAME
     
 class T2proAmpFlatSymEnvCfg(T2proFlatEnvCfg):
-    experiment_name: str = "t2pro_20dof_amp_sym_flat"
-    amp_motion_files_display = ["/home/ubuntu/data/dateset/male_locomotion_gmr/往返走/Take_067_Skeleton1.txt"]
+    def __post_init__(self):
+        super().__post_init__()
+        self.experiment_name = "t2pro_20dof_amp_sym_flat"
+        self.amp_motion_files_display = ["/home/ubuntu/data/dateset/male_locomotion_gmr/往返走/Take_067_Skeleton1.txt"]
 class T2proAmpFlatSymAgentCfg(T2proAmpFlatAgentCfg):
     def __post_init__(self):
         super().__post_init__()
+        self.experiment_name = "t2pro_20dof_amp_sym_flat"
+        self.wandb_project = "t2pro_20dof_amp_sym_flat"
         self.algorithm.symmetry_cfg = RslRlSymmetryCfg(
             use_data_augmentation=True,
             use_mirror_loss=True,

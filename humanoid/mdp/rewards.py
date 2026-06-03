@@ -103,7 +103,16 @@ def fly(env: BaseEnv, threshold: float, sensor_cfg: SceneEntityCfg) -> torch.Ten
 def flat_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
     return torch.sum(torch.square(asset.data.projected_gravity_b[:, :2]), dim=1)
-
+def adaptive_flat_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    gravity_xy = asset.data.projected_gravity_b[:, :2]
+    vel_cmd = torch.norm(env.command_generator.command[:, :2], dim=1)
+    scale = torch.clamp(
+        (1.0 - vel_cmd) / 1.0,
+        min=0.1,
+        max=1.0,
+    )
+    return torch.sum(torch.square(gravity_xy), dim=1) * scale
 
 def is_terminated(env: BaseEnv) -> torch.Tensor:
     """Penalize terminated episodes that don't correspond to episodic timeouts."""
@@ -1041,3 +1050,14 @@ def adaptive_feet_air_time_positive_biped(env: BaseEnv, sensor_cfg: SceneEntityC
         active = (total_command > command_threshold).float()
         reward *= active
     return reward
+
+def dont_wait(
+    env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize standing still when there is a forward velocity command."""
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+    # compute the error
+    lin_vel_cmd_x = env.command_generator.command[:, 0]
+    lin_vel_x = asset.data.root_lin_vel_b[:, 0]
+    return (lin_vel_cmd_x > 0.3) * ((lin_vel_x < 0.15).float() + (lin_vel_x < 0).float() + (lin_vel_x < -0.15).float())

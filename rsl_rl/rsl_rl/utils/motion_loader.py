@@ -66,7 +66,7 @@ class AMPLoader:
     
     S_JOINT_POS_SIZE = 20
     S_JOINT_VEL_SIZE = 20
-    S_END_EFFECTOR_POS_SIZE = 162 # n*15
+    S_END_EFFECTOR_POS_SIZE = 39 # n*15
     S_JOINT_POSE_START_IDX = 0
     S_JOINT_POSE_END_IDX = S_JOINT_POSE_START_IDX + S_JOINT_POS_SIZE
     S_JOINT_VEL_START_IDX = S_JOINT_POSE_END_IDX
@@ -197,14 +197,14 @@ class AMPLoader:
                 motion_data = np.concatenate([
                     joint_pos_mujoco[:, AMPLoader.joint_mujoco_select].cpu().numpy(), # N
                     joint_vel_mujoco[:, AMPLoader.joint_mujoco_select].cpu().numpy(), # N
-                    select_root_ori.cpu().numpy(),
-                    select_root_lin_vel_b.cpu().numpy(),
+                    # select_root_ori.cpu().numpy(),
+                    # select_root_lin_vel_b.cpu().numpy(),
                     select_root_ang_vel_b.cpu().numpy(),
                     select_body_pos_b.flatten(start_dim=1).cpu().numpy(), # 3*N
                     # select_body_quat_b.flatten(start_dim=1).cpu().numpy(), # 4*N
-                    select_body_ori_b.flatten(start_dim=1).cpu().numpy(), # 6*N
+                    # select_body_ori_b.flatten(start_dim=1).cpu().numpy(), # 6*N
                     select_body_lin_vel_b.flatten(start_dim=1).cpu().numpy(), # 3*N
-                    select_body_ang_vel_b.flatten(start_dim=1).cpu().numpy(), # 3*N
+                    # select_body_ang_vel_b.flatten(start_dim=1).cpu().numpy(), # 3*N
                 ], axis=1)
                 print(motion_data.shape)
                 # Remove first 7 observation dimensions (root_pos and root_orn).
