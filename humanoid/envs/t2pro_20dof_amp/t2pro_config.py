@@ -103,8 +103,8 @@ class T2proRewardCfg(RewardCfg):
         weight=-10.0,
         params={"sensor_cfg": SceneEntityCfg("contact_sensor", body_names=[".*ankle_roll.*"])},
     )
-    ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
-    ankle_action = RewTerm(func=mdp.ankle_action, weight=-0.001)
+    # ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
+    # ankle_action = RewTerm(func=mdp.ankle_action, weight=-0.001)
     stand_still_joint_deviation_l1 = RewTerm(
         func=mdp.leglab_stand_still_joint_deviation_l1,
         weight=-1.0,
@@ -153,9 +153,9 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         super().__post_init__()
         self.scene.height_scanner.prim_body_name = "base_link"
         self.scene.robot = T2PRO
-        self.scene.terrain_type = "plane"
-        # self.scene.terrain_type = "generator"
-        # self.scene.terrain_generator = ROUGH_TERRAINS_CFG
+        # self.scene.terrain_type = "plane"
+        self.scene.terrain_type = "generator"
+        self.scene.terrain_generator = ROUGH_TERRAINS_CFG
         self.robot.terminate_contacts_body_names = ["base_link"]
         self.robot.feet_body_names = [".*ankle_roll.*"]
         self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = ["base_link"]

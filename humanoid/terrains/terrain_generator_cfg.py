@@ -74,16 +74,16 @@ ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
         #     holes=False,
         # ),
         "up_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
-            proportion=0.6,
+            proportion=0.3,
             slope_range=(0.0, 0.577), # 30 0.577
             platform_width=2.0,
         ),
 
-        # "down_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
-        #     proportion=0.35,
-        #     slope_range=(-0.364, 0.0), # 20 0.364
-        #     platform_width=2.0,
-        # ),
+        "down_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
+            proportion=0.3,
+            slope_range=(0, -0.577), # 20 0.364
+            platform_width=2.0,
+        ),
         # "flat": terrain_gen.HfPyramidSlopedTerrainCfg(
         #     proportion=0.1,
         #     slope_range=(0.0, 0.0),

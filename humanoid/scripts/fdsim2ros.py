@@ -78,11 +78,11 @@ def keyboard_control(key):
         cmd.vx = cmd.vx - 0.1
         if cmd.vx < -0.6:
             cmd.vx = -0.6
-    if key == '4':
+    if key == '6':
         cmd.dyaw = cmd.dyaw - 0.05
         if cmd.dyaw < -0.6:
             cmd.dyaw = -0.6
-    if key == '6':
+    if key == '4':
         cmd.dyaw = cmd.dyaw + 0.05
         if cmd.dyaw > 0.6:
             cmd.dyaw = 0.6
