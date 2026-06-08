@@ -72,8 +72,8 @@ def keyboard_control(key):
     """."""
     if key == '8':
         cmd.vx = cmd.vx + 0.1
-        if cmd.vx > 1.5:
-            cmd.vx = 1.5
+        if cmd.vx > 1.2:
+            cmd.vx = 1.2
     if key == '2':
         cmd.vx = cmd.vx - 0.1
         if cmd.vx < -0.6:
@@ -316,8 +316,8 @@ class HumaRobotSimRos(Node):
         self.all_default_joint_pos = [
             0.02, 0.0, 0.0, 0.1, -0.08, 0.0,
             0.02, 0.0, 0.0, 0.1, -0.08, 0.0,
-            0.1, 0.2, 0, 1.4,
-            0.1, -0.2, 0, 1.4, 
+            0.2, 0.1, 0, 1.1,
+            0.2, -0.1, 0, 1.1, 
         ]
         print("self.all_default_joint_pos:", self.all_default_joint_pos)
         kps = [ 200, 200, 200, 200, 200, 100,

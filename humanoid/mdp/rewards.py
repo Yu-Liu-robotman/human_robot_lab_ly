@@ -1061,3 +1061,30 @@ def dont_wait(
     lin_vel_cmd_x = env.command_generator.command[:, 0]
     lin_vel_x = asset.data.root_lin_vel_b[:, 0]
     return (lin_vel_cmd_x > 0.3) * ((lin_vel_x < 0.15).float() + (lin_vel_x < 0).float() + (lin_vel_x < -0.15).float())
+def dont_wait_height(
+    env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize standing still when there is a forward velocity command."""
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+    # compute the error
+    lin_vel_cmd_x = env.command_generator.command[:, 0]
+    lin_vel_x = asset.data.root_lin_vel_b[:, 0]
+    return (lin_vel_cmd_x > 1.0) * ((lin_vel_x < 0.9).float() + (lin_vel_x < 0).float())
+
+def right_thigh_yaw_joint_sign_l1(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    joint_name: str = "leg_right_hip_yaw_joint",
+) -> torch.Tensor:
+    """Penalize right thigh yaw below zero."""
+    asset = env.scene[asset_cfg.name]
+    if joint_name not in asset.joint_names:
+        return torch.zeros(asset.data.joint_pos.shape[0], device=asset.data.joint_pos.device)
+    joint_id = asset.joint_names.index(joint_name)
+    return torch.clamp(-asset.data.joint_pos[:, joint_id], min=0.0)
+
+def joint_sign_positive_overflow_l1(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    angle = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+    return torch.sum(torch.clamp(angle, min=0.0), dim=1)

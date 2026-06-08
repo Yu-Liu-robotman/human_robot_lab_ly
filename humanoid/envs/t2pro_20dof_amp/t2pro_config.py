@@ -45,7 +45,7 @@ class T2proRewardCfg(RewardCfg):
     track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=2.0, params={"std": 0.25})
     feet_air_time = RewTerm(
         func=mdp.adaptive_feet_air_time_positive_biped,
-        weight=1.0,
+        weight=1.5,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
             "low_speed_threshold": 0.4,
@@ -114,11 +114,6 @@ class T2proRewardCfg(RewardCfg):
             "stand_cmd": True,
         },
     ) 
-    joint_torques_l2 = RewTerm(
-        func=mdp.joint_torques_l2,
-        weight=-2.0e-6,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_.*", ".*_knee_joint"])},
-    )
     
     idle_penalty_lin = RewTerm(
         func=mdp.dwaq_idle_when_commanded,
@@ -142,8 +137,30 @@ class T2proRewardCfg(RewardCfg):
             "stand_cmd": True,
         },
     )
-    dont_wait = RewTerm(func=mdp.dont_wait, weight=-0.5)
+    dont_wait = RewTerm(func=mdp.dont_wait, weight=-1.0)
     
+    # 优化摆臂
+    joint_deviation_arms = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-0.15,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*"]
+            )
+        },
+    )
+    # 抑制elbow外翻
+    joint_sign_positive_overflow = RewTerm(
+        func=mdp.joint_sign_positive_overflow_l1,
+        weight=-0.5,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=[".*_elbow_.*"]
+            )
+        },
+    )
+    # 优化高速起不来
+    dont_wait_height = RewTerm(func=mdp.dont_wait_height, weight=-1.0)
 @configclass
 class T2proFlatEnvCfg(BaseEnvCfg):
     reward = T2proRewardCfg()
@@ -271,9 +288,9 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/81-0511.txt",
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/91-0511.txt",
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/101-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/111-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/121-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/131-0511.txt",
+                        # "humanoid/envs/t2pro_20dof_amp/datasets/txt/111-0511.txt",
+                        # "humanoid/envs/t2pro_20dof_amp/datasets/txt/121-0511.txt",
+                        # "humanoid/envs/t2pro_20dof_amp/datasets/txt/131-0511.txt",
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/141-0511.txt",
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/151-0511.txt",
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/161-0511.txt",
