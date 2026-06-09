@@ -45,7 +45,7 @@ class T2proRewardCfg(RewardCfg):
     track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=2.0, params={"std": 0.25})
     feet_air_time = RewTerm(
         func=mdp.adaptive_feet_air_time_positive_biped,
-        weight=1.5,
+        weight=1.0,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
             "low_speed_threshold": 0.4,
@@ -54,7 +54,9 @@ class T2proRewardCfg(RewardCfg):
         },
     )
     alive = RewTerm(func=mdp.dwaq_alive, weight=0.15) 
-    
+    # 奖励直膝行走
+    target_base_height = RewTerm(func=mdp.target_base_height, weight=1.0, 
+                                 params={"base_height_target": 0.81})
     # 惩罚   
     ang_vel_xy_l2 = RewTerm(func=mdp.mjlab_body_angular_velocity_penalty, weight=-0.05,  params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link")},)
     energy = RewTerm(func=mdp.energy, weight=-1e-3)
@@ -103,7 +105,7 @@ class T2proRewardCfg(RewardCfg):
         weight=-10.0,
         params={"sensor_cfg": SceneEntityCfg("contact_sensor", body_names=[".*ankle_roll.*"])},
     )
-    # ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
+    ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0005)
     # ankle_action = RewTerm(func=mdp.ankle_action, weight=-0.001)
     stand_still_joint_deviation_l1 = RewTerm(
         func=mdp.leglab_stand_still_joint_deviation_l1,
@@ -132,12 +134,13 @@ class T2proRewardCfg(RewardCfg):
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
             "command_threshold": 0.1,
-            "max_ds_time": 0.1,
+            "max_ds_time": 0.2,
             "force_threshold": 5.0,
             "stand_cmd": True,
         },
     )
     dont_wait = RewTerm(func=mdp.dont_wait, weight=-1.0)
+  
     
     # 优化摆臂
     joint_deviation_arms = RewTerm(
@@ -146,6 +149,26 @@ class T2proRewardCfg(RewardCfg):
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*"]
+            )
+        },
+    )
+
+    joint_deviation_arms = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-0.01,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=[".*_shoulder_pitch.*", ".*_elbow_.*"]
+            )
+        },
+    )
+    # 脚内收
+    joint_deviation_leg = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-0.1,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=[".*_hip_roll.*", ".*_hip_yaw.*"]
             )
         },
     )
@@ -159,8 +182,13 @@ class T2proRewardCfg(RewardCfg):
             )
         },
     )
+    
     # 优化高速起不来
-    dont_wait_height = RewTerm(func=mdp.dont_wait_height, weight=-1.0)
+    dont_wait_fast = RewTerm(func=mdp.dont_wait_fast, weight=-1.0)
+    
+    # 优化旋转不走
+    dont_wait_yawp = RewTerm(func=mdp.dont_wait_yawp, weight=-1.0)
+    dont_wait_yawn = RewTerm(func=mdp.dont_wait_yawn, weight=-1.0)
 @configclass
 class T2proFlatEnvCfg(BaseEnvCfg):
     reward = T2proRewardCfg()
@@ -250,10 +278,10 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.005,
+        entropy_coef=0.01,
         num_learning_epochs=5,
         num_mini_batches=4,
-        learning_rate=1.0e-3,
+        learning_rate=1.0e-4,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,

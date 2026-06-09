@@ -1061,7 +1061,7 @@ def dont_wait(
     lin_vel_cmd_x = env.command_generator.command[:, 0]
     lin_vel_x = asset.data.root_lin_vel_b[:, 0]
     return (lin_vel_cmd_x > 0.3) * ((lin_vel_x < 0.15).float() + (lin_vel_x < 0).float() + (lin_vel_x < -0.15).float())
-def dont_wait_height(
+def dont_wait_fast(
     env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
 ) -> torch.Tensor:
     """Penalize standing still when there is a forward velocity command."""
@@ -1088,3 +1088,31 @@ def joint_sign_positive_overflow_l1(env: BaseEnv, asset_cfg: SceneEntityCfg = Sc
     asset: Articulation = env.scene[asset_cfg.name]
     angle = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
     return torch.sum(torch.clamp(angle, min=0.0), dim=1)
+def target_base_height(
+    env: BaseEnv, base_height_target: float, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+):
+    asset: Articulation = env.scene[asset_cfg.name]
+    base_height = asset.data.root_link_pos_w[:, 2]
+    error = base_height - base_height_target
+    error = torch.clamp(error, max=0)
+    return torch.exp(-torch.abs(error) * 100) 
+def dont_wait_yawp(
+    env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize standing still when there is a forward velocity command."""
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+    # compute the error
+    ang_vel_cmd_x = env.command_generator.command[:, 2]
+    ang_vel_x = asset.data.root_ang_vel_b[:, 2]
+    return (ang_vel_cmd_x > 0.1) * ((ang_vel_x < 0.1).float() + (ang_vel_x <= 0).float() + (ang_vel_x < -0.15).float())
+def dont_wait_yawn(
+    env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize standing still when there is a forward velocity command."""
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+    # compute the error
+    ang_vel_cmd_x = env.command_generator.command[:, 2]
+    ang_vel_x = asset.data.root_ang_vel_b[:, 2]
+    return (ang_vel_cmd_x < -0.1) * ((ang_vel_x > -0.1).float() + (ang_vel_x >= 0).float() + (ang_vel_x > 0.15).float())

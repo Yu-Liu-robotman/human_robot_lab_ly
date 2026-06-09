@@ -72,20 +72,20 @@ def keyboard_control(key):
     """."""
     if key == '8':
         cmd.vx = cmd.vx + 0.1
-        if cmd.vx > 1.2:
-            cmd.vx = 1.2
+        if cmd.vx > 1.5:
+            cmd.vx = 1.5
     if key == '2':
         cmd.vx = cmd.vx - 0.1
         if cmd.vx < -0.6:
             cmd.vx = -0.6
     if key == '6':
         cmd.dyaw = cmd.dyaw - 0.05
-        if cmd.dyaw < -0.6:
-            cmd.dyaw = -0.6
+        if cmd.dyaw < -1.0:
+            cmd.dyaw = -1.0
     if key == '4':
         cmd.dyaw = cmd.dyaw + 0.05
-        if cmd.dyaw > 0.6:
-            cmd.dyaw = 0.6
+        if cmd.dyaw > 1.0:
+            cmd.dyaw = 1.0
             
     if key == '7':
         cmd.vy = cmd.vy + 0.1
@@ -374,8 +374,8 @@ class HumaRobotSimRos(Node):
                 data.ctrl = self.tau
 
                 # 跌到重置
-                if rBody[2, 2] < 0.5:
-                    mujoco.mj_resetData(model, data)
+                # if rBody[2, 2] < 0.2:
+                #     mujoco.mj_resetData(model, data)
 
                 mujoco.mj_step(model, data)
                 ref_time += model.opt.timestep
