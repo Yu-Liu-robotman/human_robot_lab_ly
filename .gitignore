@@ -5,9 +5,12 @@ outputs
 logs
 run_bash.sh
 wandb
-humanoid/assets/t1pro/train_asset
+humanoid/assets/t2pro/train_asset
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.zip
+*copy*
+humanoid/assets/t2pro/mjcf/scene_terrain.xml
