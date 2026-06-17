@@ -74,8 +74,9 @@ class BaseEnvCfg:
         ),
     )
     robot: RobotCfg = RobotCfg(
-        actor_obs_history_length=10,
-        critic_obs_history_length=10,
+        actor_obs_history_length=1,
+        critic_obs_history_length=1,
+        hist_obs_num = 5,
         action_scale=0.25,
         terminate_contacts_body_names=MISSING,
         feet_body_names=MISSING,
@@ -166,7 +167,7 @@ class BaseEnvCfg:
                 func=mdp.push_by_setting_velocity,
                 mode="interval",
                 interval_range_s=(10.0, 15.0),
-                params={"velocity_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}},
+                params={"velocity_range": {"x": (-1.0, 1.0), "y": (-1.0, 1.0)}},
             ),
             scale_joint_pd = EventTerm(
                 func=mdp.randomize_actuator_gains,

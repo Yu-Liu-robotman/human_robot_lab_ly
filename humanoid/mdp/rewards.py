@@ -22,7 +22,18 @@ def track_lin_vel_xy_exp(
         torch.square(env.command_generator.command[:, :2] - asset.data.root_lin_vel_b[:, :2]),
         dim=1,
     )
-    reward = torch.exp(-lin_vel_error / std**2)
+
+    command = env.command_generator.command
+    total_command = (
+        torch.norm(command[:, :2], dim=1)
+        + torch.abs(command[:, 2])
+    )
+    adaptive_std = torch.where(
+        total_command < 0.3,
+        torch.full_like(total_command, 0.1),
+        torch.full_like(total_command, std),
+    )
+    reward = torch.exp(-lin_vel_error / adaptive_std**2)
     return reward
 
 
@@ -34,7 +45,17 @@ def track_ang_vel_z_exp(
     asset: Articulation = env.scene[asset_cfg.name]
     # compute the error
     ang_vel_error = torch.square(env.command_generator.command[:, 2] - asset.data.root_ang_vel_b[:, 2])
-    reward = torch.exp(-ang_vel_error / std**2)
+    command = env.command_generator.command
+    total_command = (
+        torch.norm(command[:, :2], dim=1)
+        + torch.abs(command[:, 2])
+    )
+    adaptive_std = torch.where(
+        total_command < 0.3,
+        torch.full_like(total_command, 0.1),
+        torch.full_like(total_command, std),
+    )
+    reward = torch.exp(-ang_vel_error / adaptive_std**2)
     return reward
 
 def track_lin_vel_xy_yaw_frame_exp(
@@ -97,21 +118,24 @@ def fly(env: BaseEnv, threshold: float, sensor_cfg: SceneEntityCfg) -> torch.Ten
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
     net_contact_forces = contact_sensor.data.net_forces_w_history
     is_contact = torch.max(torch.norm(net_contact_forces[:, :, sensor_cfg.body_ids], dim=-1), dim=1)[0] > threshold
-    return torch.sum(is_contact, dim=-1) < 0.5
+    return torch.sum(is_contact, dim=-1) < 0.5 * (env.command_generator.command[:, 0] < 1.5)
 
 
 def flat_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
     return torch.sum(torch.square(asset.data.projected_gravity_b[:, :2]), dim=1)
+
 def adaptive_flat_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
     gravity_xy = asset.data.projected_gravity_b[:, :2]
     vel_cmd = torch.norm(env.command_generator.command[:, :2], dim=1)
     scale = torch.clamp(
-        (1.0 - vel_cmd) / 1.0,
-        min=0.1,
-        max=1.0,
-    )
+            (1.0 - vel_cmd) / 1.0,
+            min=0.1,
+            max=1.0,
+            )
+    max_scale = torch.where(env.walk_mask[:, 0], 0.6, 1.0)
+    scale = torch.clamp(scale, max=max_scale)
     return torch.sum(torch.square(gravity_xy), dim=1) * scale
 
 def is_terminated(env: BaseEnv) -> torch.Tensor:
@@ -1016,6 +1040,7 @@ def atom_feet_slide(
     reward = torch.sum(foot_leteral_vel * contacts, dim=1)
     return reward
 
+
 def adaptive_feet_air_time_positive_biped(env: BaseEnv, sensor_cfg: SceneEntityCfg, low_speed_threshold: float, high_speed_threshold: float, command_threshold: float = 0.1, stand_cmd: bool = False) -> torch.Tensor:
     """Reward long steps taken by the feet for bipeds.
 
@@ -1061,6 +1086,7 @@ def dont_wait(
     lin_vel_cmd_x = env.command_generator.command[:, 0]
     lin_vel_x = asset.data.root_lin_vel_b[:, 0]
     return (lin_vel_cmd_x > 0.3) * ((lin_vel_x < 0.15).float() + (lin_vel_x < 0).float() + (lin_vel_x < -0.15).float())
+
 def dont_wait_fast(
     env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
 ) -> torch.Tensor:
@@ -1116,3 +1142,94 @@ def dont_wait_yawn(
     ang_vel_cmd_x = env.command_generator.command[:, 2]
     ang_vel_x = asset.data.root_ang_vel_b[:, 2]
     return (ang_vel_cmd_x < -0.1) * ((ang_vel_x > -0.1).float() + (ang_vel_x >= 0).float() + (ang_vel_x > 0.15).float())
+
+def base_height_penalty(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    target_height: float = 0.846,
+    tolerance: float = 0.02,
+) -> torch.Tensor:
+    """
+    Penalty for deviating from the target base height.
+    Uses the average terrain height under the feet as reference.
+
+    Args:
+        env: The environment instance (T1miniEnv)
+        sensor_cfg: Feet or height scanner sensor config
+        asset_cfg: Robot asset config
+        target_height: Desired base height relative to terrain
+        sigma: Tolerance for deviation (smaller = sharper penalty)
+
+    Returns:
+        penalty: Tensor of shape (num_envs,) with positive values for deviations
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    terrain_height = env.terrain_height_at_feet.mean(dim=1)
+    base_height = asset.data.root_pos_w[:, 2] - terrain_height
+    deviation = torch.abs(base_height - target_height)
+    penalty = torch.clamp(deviation - tolerance, min=0.0)
+    penalty = torch.square(penalty)
+    vel_x = env.command_generator.command[:, 0]
+    vel_scale = torch.clamp(1-vel_x, min=0.2)
+    max_scale = torch.where(env.walk_mask[:, 0], 0.6, 1.0)
+    vel_scale = torch.clamp(vel_scale, max=max_scale)
+    return penalty * vel_scale 
+
+def dont_wait_height(
+    env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize standing still when there is a forward velocity command."""
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+    # compute the error
+    lin_vel_cmd_x = env.command_generator.command[:, 0]
+    lin_vel_x = asset.data.root_lin_vel_b[:, 0]
+    scale = 1.0 + (env.command_generator.command[:, 0] > 1.5)
+    return (lin_vel_cmd_x > 1.0) * ((lin_vel_x < 0.9).float() + (lin_vel_x < 0).float()) * scale
+
+def dont_wait_linyp(
+    env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize standing still when there is a forward velocity command."""
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+    # compute the error
+    lin_vel_cmd_y = env.command_generator.command[:, 1]
+    lin_vel_y = asset.data.root_ang_vel_b[:, 1]
+    scale = 1.0 + (env.command_generator.command[:, 0] > 1.5)
+    return (lin_vel_cmd_y > 0.1) * ((lin_vel_y < 0.1).float() + (lin_vel_y <= 0).float() + (lin_vel_y < -0.15).float()) * scale
+
+def dont_wait_linyn(
+    env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize standing still when there is a forward velocity command."""
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+    # compute the error
+    lin_vel_cmd_y = env.command_generator.command[:, 1]
+    lin_vel_y = asset.data.root_ang_vel_b[:, 1]
+    scale = 1.0 + (env.command_generator.command[:, 0] > 1.5)
+    return (lin_vel_cmd_y < -0.1) * ((lin_vel_y > -0.1).float() + (lin_vel_y >= 0).float() + (lin_vel_y > 0.15).float()) * scale
+
+
+def zero_double_support_penalize(
+    env: BaseEnv,
+    sensor_cfg: SceneEntityCfg,
+    max_ds_time: float = 0.08,   
+    force_threshold: float = 1.0,
+) -> torch.Tensor:
+    """
+    Penalize long double-support duration using time instead of steps.
+    """
+    dt = env.step_dt  
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    contact_mask = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2] > force_threshold
+    double_support_mask = (torch.sum(contact_mask, dim=1) == 2)
+    if not hasattr(env, "ds_time"):
+        env.ds_time_zero = torch.zeros(env.num_envs, device=env.device)
+    env.ds_time_zero = env.ds_time_zero * double_support_mask + double_support_mask.float() * dt
+    swing = env.walk_mask[:, 0].clone()
+    long_ds = env.ds_time_zero > max_ds_time    # åæ¯æå¤ªä¹
+    cost = long_ds.float() * swing.float() # åæ¯æå¤ªä¹andè¸æ­¥æ¨¡å¼
+    cost = cost.clamp(0.0, 1.0)
+    return cost

@@ -7,5 +7,5 @@
 
 from .amp_on_policy_runner import AmpOnPolicyRunner
 from .on_policy_runner import OnPolicyRunner
-
-__all__ = ["OnPolicyRunner", "AmpOnPolicyRunner"]
+from .dwaq_amp_on_policy_runner import DreamWaQAmpOnPolicyRunner
+__all__ = ["OnPolicyRunner", "AmpOnPolicyRunner", "DreamWaQAmpOnPolicyRunner"]

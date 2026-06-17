@@ -24,6 +24,7 @@ import time
 from collections import deque
 
 import torch
+import numbers
 
 import rsl_rl
 from rsl_rl.algorithms import AMPPPO
@@ -372,10 +373,20 @@ class AmpOnPolicyRunner:
                     # handle scalar and zero dimensional tensor infos
                     if key not in ep_info:
                         continue
-                    if not isinstance(ep_info[key], torch.Tensor):
-                        ep_info[key] = torch.Tensor([ep_info[key]])
-                    if len(ep_info[key].shape) == 0:
-                        ep_info[key] = ep_info[key].unsqueeze(0)
+                    # skip non-scalar entries (dicts, lists, strings)
+                    val = ep_info[key]
+                    if isinstance(val, torch.Tensor):
+                        tensor_val = val
+                    else:
+                        # allow numeric scalars (int/float/bool and numpy numbers)
+                        if isinstance(val, numbers.Number):
+                            tensor_val = torch.tensor([val])
+                        else:
+                            # unsupported type for aggregation (e.g. dict/list/str) -> skip
+                            continue
+                    if len(tensor_val.shape) == 0:
+                        tensor_val = tensor_val.unsqueeze(0)
+                    ep_info[key] = tensor_val
                     infotensor = torch.cat((infotensor, ep_info[key].to(self.device)))
                 value = torch.mean(infotensor)
                 # log to logger and terminal

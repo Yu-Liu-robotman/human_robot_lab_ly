@@ -26,7 +26,12 @@ class HeightScannerCfg:
     debug_vis: bool = False
     drift_range: tuple = (0.0, 0.0)
 
-
+@configclass
+class PrivilegedInfoCfg:
+    """Configuration for privileged information given to Critic (asymmetric AC)."""
+    enable_feet_info: bool = False      # feet position and velocity in body frame (12 dim)
+    enable_feet_contact_force: bool = False  # feet contact force 3D (6 dim)
+    enable_root_height: bool = False    # base height (1 dim)
 @configclass
 class BaseSceneCfg:
     max_episode_length_s: float = 20.0
@@ -37,14 +42,16 @@ class BaseSceneCfg:
     terrain_generator: TerrainGeneratorCfg = None
     max_init_terrain_level: int = 5
     height_scanner: HeightScannerCfg = HeightScannerCfg()
+    privileged_info: PrivilegedInfoCfg = PrivilegedInfoCfg() 
     lidar: LidarCfg = LidarCfg()
     depth_camera: TiledCameraCfg = TiledCameraCfg()
 
 
 @configclass
 class RobotCfg:
-    actor_obs_history_length: int = 10
-    critic_obs_history_length: int = 10
+    actor_obs_history_length: int = 1
+    critic_obs_history_length: int = 1
+    hist_obs_num = 5
     action_scale: float = 0.25
     terminate_contacts_body_names: list = []
     feet_body_names: list = []

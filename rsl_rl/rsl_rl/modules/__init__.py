@@ -12,7 +12,7 @@ from .rnd import RandomNetworkDistillation
 from .student_teacher import StudentTeacher
 from .student_teacher_recurrent import StudentTeacherRecurrent
 from .discriminator import Discriminator
-
+from .actor_critic_dwaq import ActorCriticDreamWaQ
 __all__ = [
     "ActorCritic",
     "ActorCriticRecurrent",
@@ -20,5 +20,6 @@ __all__ = [
     "RandomNetworkDistillation",
     "StudentTeacher",
     "StudentTeacherRecurrent",
-    "Discriminator"
+    "Discriminator",
+    "ActorCriticDreamWaQ"
 ]

@@ -7,13 +7,13 @@ import yaml
 
 import torch
 from isaaclab.app import AppLauncher
-from rsl_rl.runners import OnPolicyRunner, AmpOnPolicyRunner
+from rsl_rl.runners import OnPolicyRunner, AmpOnPolicyRunner, DreamWaQAmpOnPolicyRunner
 
 from humanoid.utils import task_registry, Logger
 from tqdm import tqdm
 # local imports
 import humanoid.utils.cli_args as cli_args  # isort: skip
-
+from humanoid.scripts.export_dwaq_policy import export_dwaq_policy
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
@@ -38,6 +38,8 @@ from humanoid.utils.cli_args import update_rsl_rl_cfg
 import humanoid.tools.common as tool_util
 from datetime import datetime
 from humanoid import HUMANOID_LAB_ROOT_DIR
+from humanoid.terrains import GRAVEL_TERRAINS_CFG, ROUGH_TERRAINS_CFG, DWAQ_TERRAINS_CFG, STAIRS_SLOPE_HARD_CFG
+
 def policy_exported_param(env):
     num_actions = env.num_actions
     obs_index_phase = env.obs_index_phase
@@ -119,6 +121,10 @@ def policy_exported_param(env):
             dof_names.append("joint_arm_right_wristy")
        
     exp_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if env.cfg.experiment_name == "t2pro_20dof_amp_dwaq_flat":
+        frame_stack = env.cfg.robot.hist_obs_num
+    else:
+        frame_stack = env.cfg.robot.actor_obs_history_length
     policy_param = {
         "rl_version": env.rl_version,
         "default_joint_pos": default_joint_pos,
@@ -129,12 +135,12 @@ def policy_exported_param(env):
         "ref_cycle_type": 0,
         "dof_names": dof_names,
         "num_actions": num_actions,
-        "frame_stack": env.cfg.robot.actor_obs_history_length,
+        "frame_stack": frame_stack,
         "num_single_obs": env.num_single_obs,
         "dt": env.step_dt,
         "cycle_time": env.cfg.cycle_time,
         "clip_observations": env.cfg.normalization.clip_observations,
-        "num_observations": env.num_single_obs * env.cfg.robot.actor_obs_history_length,
+        "num_observations": env.num_single_obs * frame_stack,
         "clip_actions": env.cfg.normalization.clip_actions,
         "action_scale": env.cfg.robot.action_scale,
         "num_forcesensor": 2,
@@ -215,7 +221,8 @@ def play():
     env_cfg: BaseEnvCfg  # noqa:F405
     env_class_name = args_cli.task
     env_cfg, agent_cfg = task_registry.get_cfgs(env_class_name)
-
+    if env_class_name == "t2pro_20dof_amp_dwaq_flat":
+        env_cfg.scene.terrain_generator = STAIRS_SLOPE_HARD_CFG
     env_cfg.noise.add_noise = False
     env_cfg.domain_rand.events.push_robot = None
     env_cfg.scene.max_episode_length_s = 40.0
@@ -250,17 +257,20 @@ def play():
     resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
     log_dir = os.path.dirname(resume_path)
     
-    runner_class: OnPolicyRunner | AmpOnPolicyRunner = eval(agent_cfg.runner_class_name)
+    runner_class: OnPolicyRunner | AmpOnPolicyRunner | DreamWaQAmpOnPolicyRunner = eval(agent_cfg.runner_class_name)
     runner = runner_class(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
     runner.load(resume_path, load_optimizer=False)
 
     policy = runner.get_inference_policy(device=env.device)
 
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    export_policy_as_jit(runner.alg.policy, runner.obs_normalizer, path=export_model_dir, filename="policy.pt")
-    export_policy_as_onnx(
-        runner.alg.policy, normalizer=runner.obs_normalizer, path=export_model_dir, filename="policy.onnx"
-    )
+    if env_class_name == "t2pro_20dof_amp_dwaq_flat":
+        export_dwaq_policy(resume_path)
+    else:
+        export_policy_as_jit(runner.alg.policy, runner.obs_normalizer, path=export_model_dir, filename="policy.pt")
+        export_policy_as_onnx(
+            runner.alg.policy, normalizer=runner.obs_normalizer, path=export_model_dir, filename="policy.onnx"
+        )
     param_file = export_policy_param_file(env, export_model_dir)
     print('Exported policy param to: ', param_file)
     model_path_mjcf_file = f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/t2pro/mjcf/{agent_cfg.experiment_name.split('_')[0]}.xml"
@@ -279,14 +289,19 @@ def play():
 
         keyboard = Keyboard(env)  # noqa:F841
 
-    obs, _ = env.get_observations()
+    obs, infos = env.get_observations()
     logger = Logger(env.step_dt)
     stop_state_log = 1000
     for i in tqdm(range(stop_state_log)):
 
         with torch.inference_mode():
-            actions = policy(obs)
-            obs, _, _, _ = env.step(actions)
+            if runner_class == DreamWaQAmpOnPolicyRunner:
+                obs_history = infos["observations"].get("hist_obs")
+                actions = policy(obs, obs_history)
+                obs, _, _, infos = env.step(actions)
+            else:
+                actions = policy(obs)
+                obs, _, _, _ = env.step(actions)
         # logger.log_states(
         #     {
         #         'dof_pos': env.ref_dof_pos[0, 2].item(),

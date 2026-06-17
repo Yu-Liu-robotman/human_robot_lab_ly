@@ -17,6 +17,7 @@ from scipy.spatial.transform import Rotation
 from humanoid.envs.t2pro_20dof_amp.t2pro_config import T2proFlatEnvCfg, T2proAmpFlatEnvCfg
 from humanoid.utils.env_utils.scene import SceneCfg
 from humanoid.envs.base.base_env import BaseEnv
+from humanoid.mdp.command import TlibotUniformVelocityCommand
 import isaaclab.utils.math as math_utils
 
 @torch.jit.script
@@ -112,7 +113,7 @@ class T2proEnv(BaseEnv):
             debug_vis=self.cfg.commands.debug_vis,
             ranges=self.cfg.commands.ranges,
         )
-        self.command_generator = UniformVelocityCommand(cfg=command_cfg, env=self)
+        self.command_generator = TlibotUniformVelocityCommand(cfg=command_cfg, env=self)
         self.reward_manager = RewardManager(self.cfg.reward, self)
 
         self.init_buffers()
@@ -287,10 +288,24 @@ class T2proEnv(BaseEnv):
         self.left_contact_time  = torch.zeros(self.num_envs, device=self.device)
         self.right_contact_time = torch.zeros(self.num_envs, device=self.device)
         self.ds_time            = torch.zeros(self.num_envs, device=self.device)
+        self.ds_time_zero       = torch.zeros(self.num_envs, device=self.device)
         self.last_contact_mask  = torch.zeros(self.num_envs, 2, device=self.device)
         self.stand_flag = torch.randint(0, 2, (self.num_envs, 1), device=self.device) * 2 - 1
         self.stand_mask = torch.zeros(self.num_envs, 1, device=self.device, dtype=torch.bool)
         self.walk_mask = torch.zeros(self.num_envs, 1, device=self.device, dtype=torch.bool)
+        
+        num_feet = len(self.feet_cfg.body_ids)
+        self.feet_pos_in_body = torch.zeros(self.num_envs, num_feet, 3, device=self.device)
+        self.feet_vel_in_body = torch.zeros(self.num_envs, num_feet, 3, device=self.device)
+        self.forward_obstacle_height = torch.zeros(self.num_envs, 2, device=self.device)
+        self.terrain_height_at_feet = torch.zeros(self.num_envs, 2, device=self.device)
+        if self.cfg.domain_rand.events.push_robot is not None:
+            self.push_velocity_range_base = self.cfg.domain_rand.events.push_robot.params["velocity_range"]
+        else:
+            self.push_velocity_range_base = {
+                "x": (-0.0, 0.0),
+                "y": (-0.0, 0.0),
+            }
         self.init_obs_buffer()
 
     def compute_current_observations(self):
@@ -320,9 +335,28 @@ class T2proEnv(BaseEnv):
         )
         self.num_single_obs = current_actor_obs.shape[-1]
         
-        current_critic_obs = torch.cat(
-            [current_actor_obs, self.base_lin_vel * self.obs_scales.lin_vel, contact_mask], dim=-1
-        )
+        self.vel_buf = self.base_lin_vel.clone()
+        critic_obs_list = [current_actor_obs, self.base_lin_vel * self.obs_scales.lin_vel, contact_mask]
+
+        priv_cfg = self.cfg.scene.privileged_info
+        if priv_cfg.enable_feet_info or priv_cfg.enable_feet_contact_force:
+            self._compute_feet_state()
+        
+        # Add feet position and velocity in body frame (12 dim)
+        if priv_cfg.enable_feet_info:
+            critic_obs_list.append(self.feet_pos_in_body.reshape(self.num_envs, -1) * self.obs_scales.feet_pos)
+            critic_obs_list.append(self.feet_vel_in_body.reshape(self.num_envs, -1) * self.obs_scales.feet_vel)
+        
+        # Add feet contact force 3D (6 dim for 2 feet)
+        if priv_cfg.enable_feet_contact_force:
+            feet_force = net_contact_forces[:, self.feet_cfg.body_ids, :]  # (num_envs, num_feet, 3)
+            critic_obs_list.append(feet_force.reshape(self.num_envs, -1) * self.obs_scales.contact_force)
+        
+        # Add root height (1 dim)
+        if priv_cfg.enable_root_height:
+            root_height = robot.data.root_pos_w[:, 2:3]  # (num_envs, 1)
+            critic_obs_list.append(root_height)
+        current_critic_obs = torch.cat(critic_obs_list, dim=-1)
 
         return current_actor_obs, current_critic_obs
 
@@ -333,9 +367,11 @@ class T2proEnv(BaseEnv):
 
         self.actor_obs_buffer.append(current_actor_obs)
         self.critic_obs_buffer.append(current_critic_obs)
+        self.hist_obs_buf.append(current_actor_obs)
 
         actor_obs = self.actor_obs_buffer.buffer.reshape(self.num_envs, -1)
         critic_obs = self.critic_obs_buffer.buffer.reshape(self.num_envs, -1)
+    
         if self.cfg.scene.height_scanner.enable_height_scan:
             height_scan = (
                 self.height_scanner.data.pos_w[:, 2].unsqueeze(1)
@@ -343,14 +379,195 @@ class T2proEnv(BaseEnv):
                 - self.cfg.normalization.height_scan_offset
             ) * self.obs_scales.height_scan
             critic_obs = torch.cat([critic_obs, height_scan], dim=-1)
-            if self.add_noise:
-                height_scan += (2 * torch.rand_like(height_scan) - 1) * self.height_scan_noise_vec
-            actor_obs = torch.cat([actor_obs, height_scan], dim=-1)
+            # Actor only gets height_scan if critic_only=False (symmetric AC)
+            if not self.cfg.scene.height_scanner.critic_only:
+                if self.add_noise:
+                    height_scan = height_scan + (2 * torch.rand_like(height_scan) - 1) * self.height_scan_noise_vec
+                actor_obs = torch.cat([actor_obs, height_scan], dim=-1)
 
         actor_obs = torch.clip(actor_obs, -self.clip_obs, self.clip_obs)
         critic_obs = torch.clip(critic_obs, -self.clip_obs, self.clip_obs)
 
         return actor_obs, critic_obs
+    
+    def _compute_feet_state(self):
+        """Compute feet position and velocity in body frame."""
+        robot = self.robot
+        
+        # Get feet body IDs
+        feet_body_ids = self.feet_cfg.body_ids
+        
+        # Get feet positions in world frame
+        feet_pos_w = robot.data.body_pos_w[:, feet_body_ids, :]  # (num_envs, num_feet, 3)
+        feet_vel_w = robot.data.body_lin_vel_w[:, feet_body_ids, :]  # (num_envs, num_feet, 3)
+        
+        # Get root state
+        root_pos_w = robot.data.root_pos_w  # (num_envs, 3)
+        root_vel_w = robot.data.root_lin_vel_w  # (num_envs, 3)
+        root_quat_w = robot.data.root_quat_w  # (num_envs, 4) in (w, x, y, z) format
+        
+        # Translate to root frame
+        feet_pos_translated = feet_pos_w - root_pos_w.unsqueeze(1)  # (num_envs, num_feet, 3)
+        feet_vel_translated = feet_vel_w - root_vel_w.unsqueeze(1)  # (num_envs, num_feet, 3)
+        
+        # Rotate to body frame using Isaac Lab's quat_apply_inverse
+        num_feet = feet_pos_translated.shape[1]
+        for i in range(num_feet):
+            self.feet_pos_in_body[:, i, :] = math_utils.quat_apply_inverse(root_quat_w, feet_pos_translated[:, i, :])
+            self.feet_vel_in_body[:, i, :] = math_utils.quat_apply_inverse(root_quat_w, feet_vel_translated[:, i, :])
+    
+    def _compute_forward_obstacle_height(self):
+        """计算每只脚前方的障碍高度（用于自适应抬腿奖励）。
+        
+        基于 height_scanner 数据，为每只脚计算其运动方向前方的最大地形高度差。
+        结果存储在 self.forward_obstacle_height (num_envs, 2) 和
+        self.terrain_height_at_feet (num_envs, 2) 中。
+        
+        Height Scanner 配置:
+        - resolution: 0.1m (10cm 采样间隔)
+        - size: (1.6, 1.0) → 前后 ±0.8m, 左右 ±0.5m
+        - 总采样点: 17 × 11 = 187 个点
+        
+        算法:
+        1. 获取速度命令方向 (body frame → world frame)
+        2. 对每只脚，筛选其前方 0.1-0.4m 范围内的采样点
+        3. 计算前方障碍相对于**支撑腿地形**的高度差（避免摆动腿跨越边缘时突变）
+        4. 取最大值作为前方障碍高度
+        
+        关键设计:
+        - terrain_height_at_feet 使用接触地面的脚（支撑腿）的地形高度
+        - 摆动腿使用支撑腿的地形作为参考，避免跨越台阶边缘时的突变
+        - 如果两只脚都在空中，使用机器人根部高度估计
+        """
+        if not self.cfg.scene.height_scanner.enable_height_scan:
+            # 如果没有 height_scanner，使用默认值 0
+            self.forward_obstacle_height.zero_()
+            self.terrain_height_at_feet.zero_()
+            return
+        
+        # 获取 height_scanner 数据
+        # ray_hits_w: (num_envs, num_points, 3) - 射线击中点的世界坐标
+        ray_hits = self.height_scanner.data.ray_hits_w
+        terrain_z_map = ray_hits[:, :, 2]  # (num_envs, num_points)
+        
+        # 获取机器人状态
+        robot_pos = self.robot.data.root_pos_w  # (num_envs, 3)
+        robot_quat = self.robot.data.root_quat_w  # (num_envs, 4)
+        
+        # 获取脚的位置
+        feet_body_ids = self.feet_cfg.body_ids
+        feet_pos = self.robot.data.body_pos_w[:, feet_body_ids, :]  # (num_envs, 2, 3)
+        
+        # 获取接触状态来判断哪只脚是支撑腿
+        net_contact_forces = self.contact_sensor.data.net_forces_w[:, self.feet_cfg.body_ids, :]
+        is_contact = torch.norm(net_contact_forces, dim=-1) > 1.0  # (num_envs, 2)
+        
+        # 获取速度命令方向 (body frame)
+        cmd_vel = self.command_generator.command[:, :2]  # (num_envs, 2) [vx, vy]
+        cmd_norm = cmd_vel.norm(dim=-1, keepdim=True).clamp(min=0.1)
+        move_dir_b = cmd_vel / cmd_norm  # 归一化运动方向 (body frame)
+        
+        # 将运动方向转换到 world frame
+        move_dir_b_3d = torch.cat([move_dir_b, torch.zeros_like(move_dir_b[:, :1])], dim=-1)
+        move_dir_w_3d = math_utils.quat_apply(robot_quat, move_dir_b_3d)
+        move_dir_w = move_dir_w_3d[:, :2]  # (num_envs, 2) - xy 平面上的运动方向
+        
+        # ========== 第一步：计算每只脚正下方的地形高度 ==========
+        terrain_under_feet = torch.zeros((self.num_envs, 2), device=self.device)
+        for i in range(2):
+            foot_pos_xy = feet_pos[:, i, :2]  # (num_envs, 2)
+            rel_pos = ray_hits[:, :, :2] - foot_pos_xy.unsqueeze(1)
+            distance = rel_pos.norm(dim=-1)  # (num_envs, num_points)
+            
+            # 脚正下方 10cm 范围内的最低地形点
+            near_foot_mask = distance < 0.10
+            terrain_near_foot = torch.where(
+                near_foot_mask,
+                terrain_z_map,
+                torch.full_like(terrain_z_map, float('inf'))
+            )
+            min_terrain = terrain_near_foot.min(dim=-1)[0]  # (num_envs,)
+            
+            # fallback: 如果没有有效点，使用脚的 z 位置 - 5cm
+            min_terrain = torch.where(
+                torch.isinf(min_terrain),
+                feet_pos[:, i, 2] - 0.05,
+                min_terrain
+            )
+            terrain_under_feet[:, i] = min_terrain
+        
+        # ========== 第二步：确定参考地形高度（优先使用支撑腿） ==========
+        # 逻辑：
+        # - 如果只有一只脚接触地面（支撑腿），两只脚都用支撑腿的地形
+        # - 如果两只脚都接触地面，各用自己的地形
+        # - 如果两只脚都在空中（跳跃），使用根部高度估计
+        
+        left_contact = is_contact[:, 0]   # (num_envs,)
+        right_contact = is_contact[:, 1]  # (num_envs,)
+        
+        # 默认使用根部高度 - 0.78m 作为估计地形
+        root_terrain_estimate = (robot_pos[:, 2] - 0.78).clamp(min=0.0)
+        
+        # 左脚的参考地形
+        ref_terrain_left = torch.where(
+            left_contact,
+            terrain_under_feet[:, 0],  # 左脚自己接触，用自己的
+            torch.where(
+                right_contact,
+                terrain_under_feet[:, 1],  # 左脚摆动，用右脚（支撑腿）的
+                root_terrain_estimate      # 都在空中，用估计值
+            )
+        )
+        
+        # 右脚的参考地形
+        ref_terrain_right = torch.where(
+            right_contact,
+            terrain_under_feet[:, 1],  # 右脚自己接触，用自己的
+            torch.where(
+                left_contact,
+                terrain_under_feet[:, 0],  # 右脚摆动，用左脚（支撑腿）的
+                root_terrain_estimate      # 都在空中，用估计值
+            )
+        )
+        
+        self.terrain_height_at_feet[:, 0] = ref_terrain_left
+        self.terrain_height_at_feet[:, 1] = ref_terrain_right
+        
+        # ========== 第三步：计算前方障碍高度 ==========
+        for i in range(2):  # i=0: 左脚, i=1: 右脚
+            foot_pos_xy = feet_pos[:, i, :2]  # (num_envs, 2)
+            ref_terrain = self.terrain_height_at_feet[:, i]  # (num_envs,)
+            
+            # 计算采样点相对于脚的位置
+            rel_pos = ray_hits[:, :, :2] - foot_pos_xy.unsqueeze(1)  # (num_envs, num_points, 2)
+            
+            # 筛选条件:
+            # 1. 在运动方向前方 (点积 > 0.05m，避免正下方的点)
+            # 2. 距离在 0.1-0.4m 范围内（一步之内的障碍）
+            forward_dot = (rel_pos * move_dir_w.unsqueeze(1)).sum(dim=-1)  # (num_envs, num_points)
+            distance = rel_pos.norm(dim=-1)  # (num_envs, num_points)
+            
+            mask = (forward_dot > 0.05) & (distance > 0.1) & (distance < 0.4)
+            
+            # 计算前方地形相对于参考地形的高度差
+            # 关键改动：使用支撑腿的地形高度作为参考，而不是摆动腿正下方的地形
+            height_diff = terrain_z_map - ref_terrain.unsqueeze(-1)  # (num_envs, num_points)
+            
+            # 只考虑前方区域的点，取最大高度差
+            height_diff_masked = torch.where(
+                mask, 
+                height_diff, 
+                torch.full_like(height_diff, -float('inf'))
+            )
+            max_height = height_diff_masked.max(dim=-1)[0]  # (num_envs,)
+            
+            # 处理没有有效点的情况，设为 0
+            max_height = torch.where(
+                torch.isinf(max_height),
+                torch.zeros_like(max_height),
+                max_height
+            )
+            self.forward_obstacle_height[:, i] = max_height.clamp(min=0.0, max=0.5)
 
     def reset(self, env_ids):
         if len(env_ids) == 0:
@@ -358,6 +575,7 @@ class T2proEnv(BaseEnv):
         self.left_contact_time[env_ids]  = 0.0
         self.right_contact_time[env_ids] = 0.0
         self.ds_time[env_ids]            = 0.0
+        self.ds_time_zero[env_ids]       = 0.0
         self.last_contact_mask[env_ids]  = 0.0
         self.extras["log"] = dict()
         if self.cfg.scene.terrain_generator is not None:
@@ -381,6 +599,7 @@ class T2proEnv(BaseEnv):
         self.command_generator.reset(env_ids)
         self.actor_obs_buffer.reset(env_ids)
         self.critic_obs_buffer.reset(env_ids)
+        self.hist_obs_buf.reset(env_ids)
         self.action_buffer.reset(env_ids)
         self.episode_length_buf[env_ids] = 0
 
@@ -422,6 +641,7 @@ class T2proEnv(BaseEnv):
         self.torso_euler_xyz = get_euler_xyz_tensor(self.torso_quat)
         
         self.episode_length_buf += 1
+        self._compute_forward_obstacle_height()
         self.command_generator.compute(self.step_dt)
         
         self.stand_mask = (
@@ -431,7 +651,7 @@ class T2proEnv(BaseEnv):
                     & (self.stand_flag[:, 0] == 1.)
                 ).unsqueeze(1)
         self.walk_mask = ~self.stand_mask
-        
+        self.update_push_curriculum()
         if "interval" in self.event_manager.available_modes:
             self.event_manager.apply(mode="interval", dt=self.step_dt)
 
@@ -440,7 +660,10 @@ class T2proEnv(BaseEnv):
         self.reset_env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
         self.reset(self.reset_env_ids)
         actor_obs, critic_obs = self.compute_observations()
-        self.extras["observations"] = {"critic": critic_obs}
+        hist_obs = self.hist_obs_buf.buffer.reshape(self.num_envs, -1)
+        self.extras["observations"] = {"critic": critic_obs,
+                                       "hist_obs": hist_obs,
+                                       "vel_obs": self.vel_buf.clone()}
 
         return actor_obs, reward_buf, self.reset_buf, self.extras
 
@@ -495,6 +718,11 @@ class T2proEnv(BaseEnv):
         self.critic_obs_buffer = CircularBuffer(
             max_len=self.cfg.robot.critic_obs_history_length, batch_size=self.num_envs, device=self.device
         )
+        # vae
+        self.vel_buf=torch.zeros(self.num_envs, 3, dtype=torch.float, device=self.device)
+        self.hist_obs_buf = CircularBuffer(
+            max_len=self.cfg.robot.hist_obs_num, batch_size=self.num_envs, device=self.device
+        )
 
     def update_terrain_levels(self, env_ids):
         distance = torch.norm(self.robot.data.root_pos_w[env_ids, :2] - self.scene.env_origins[env_ids, :2], dim=1)
@@ -510,7 +738,12 @@ class T2proEnv(BaseEnv):
 
     def get_observations(self):
         actor_obs, critic_obs = self.compute_observations()
-        self.extras["observations"] = {"critic": critic_obs}
+        hist_obs = self.hist_obs_buf.buffer.reshape(self.num_envs, -1)
+        self.extras["observations"] = {
+            "critic": critic_obs,
+            "hist_obs": hist_obs,
+            "vel_obs": self.vel_buf.clone(),
+        }
         return actor_obs, self.extras
 
     @staticmethod
@@ -589,14 +822,50 @@ class T2proEnv(BaseEnv):
             (
                 joint_pos,
                 joint_vel,
-                # root_ori,
-                # root_lin_vel_b,
+                root_ori,
+                root_lin_vel_b,
                 root_ang_vel_b,
                 tgt_robot_body_pos_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
-                # tgt_robot_body_ori_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
+                tgt_robot_body_ori_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
                 tgt_body_lin_vel_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
-                # tgt_body_ang_vel_b.reshape(tgt_robot_body_pos_b.shape[0], -1),  
+                tgt_body_ang_vel_b.reshape(tgt_robot_body_pos_b.shape[0], -1),  
             ),
             dim=-1,
         )
         return amp_obs
+    
+    def update_push_curriculum(self):
+            try:
+                denom = max(1, self.cfg.custom.push_curriculum_common_step)
+                common_step_counter = self.sim_step_counter // self.cfg.sim.decimation
+
+                progress = np.clip(
+                    (common_step_counter - self.cfg.custom.push_curriculum_start_step)
+                    / denom,
+                    0.0,
+                    1.0,
+                )
+
+                scale = float(progress ** 2.0)
+                
+                velocity_range = {
+                    k: (float(v[0]) * scale, float(v[1]) * scale)
+                    for k, v in self.push_velocity_range_base.items()
+                }
+
+                self.cfg.domain_rand.events.push_robot.params["velocity_range"] = velocity_range
+
+                if "log" not in self.extras:
+                    self.extras["log"] = {}
+
+                self.extras["log"]["push_curriculum/scale"] = scale
+
+                for k, v in velocity_range.items():
+                    self.extras["log"][f"push_curriculum/{k}_min"] = v[0]
+                    self.extras["log"][f"push_curriculum/{k}_max"] = v[1]
+
+            except Exception as e:
+                if "log" not in self.extras:
+                    self.extras["log"] = {}
+
+                self.extras["log"]["push_curriculum/error"] = 1.0
