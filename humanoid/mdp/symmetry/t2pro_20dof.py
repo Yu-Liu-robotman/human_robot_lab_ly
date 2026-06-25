@@ -115,7 +115,7 @@ def _transform_critic_obs_left_right(env: BaseEnv, obs: torch.Tensor) -> torch.T
     # copy observation tensor
     obs = obs.clone()
     device = obs.device
-    obs_dim = 264
+    obs_dim = 265
     assert obs.shape[1] % obs_dim == 0, \
         f"Obs dim {obs.shape[1]} is not divisible by {obs_dim}"
     num_frames = obs.shape[1] // obs_dim

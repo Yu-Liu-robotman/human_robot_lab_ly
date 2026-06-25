@@ -71,11 +71,11 @@ def on_key_press(key):
 def keyboard_control(key):
     """."""
     if key == '8':
-        cmd.vx = cmd.vx + 0.1
-        if cmd.vx > 1.5:
-            cmd.vx = 1.5
+        cmd.vx = cmd.vx + 0.05
+        if cmd.vx > 3.0:
+            cmd.vx = 3.0
     if key == '2':
-        cmd.vx = cmd.vx - 0.1
+        cmd.vx = cmd.vx - 0.05
         if cmd.vx < -0.6:
             cmd.vx = -0.6
     if key == '6':
@@ -332,8 +332,8 @@ class HumaRobotSimRos(Node):
             ]
         # kps = [400] * 20
         # kds = [40] * 20
-        tau_limit = [150, 80, 80, 150, 50, 30,
-                     150, 80, 80, 150, 50, 30,
+        tau_limit = [120, 80, 80, 120, 50, 30,
+                     120, 80, 80, 120, 50, 30,
                      50, 50, 50, 50,
                      50, 50, 50, 50,
                     ]

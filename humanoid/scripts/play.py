@@ -221,8 +221,8 @@ def play():
     env_cfg: BaseEnvCfg  # noqa:F405
     env_class_name = args_cli.task
     env_cfg, agent_cfg = task_registry.get_cfgs(env_class_name)
-    if env_class_name == "t2pro_20dof_amp_dwaq_flat":
-        env_cfg.scene.terrain_generator = STAIRS_SLOPE_HARD_CFG
+    # if env_class_name == "t2pro_20dof_amp_dwaq_flat":
+    #     env_cfg.scene.terrain_generator = STAIRS_SLOPE_HARD_CFG
     env_cfg.noise.add_noise = False
     env_cfg.domain_rand.events.push_robot = None
     env_cfg.scene.max_episode_length_s = 40.0

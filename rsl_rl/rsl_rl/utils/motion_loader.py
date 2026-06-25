@@ -293,7 +293,10 @@ class AMPLoader:
             [0.0, 0.0, -1.0],    
             [0.0, 0.0, 0.3],     
             [0.0, 0.0, -0.3], 
-
+            [0.0, 0.0, 0.0], 
+            [2.0, 0.0, 0.0], 
+            [2.0, 0.0, 1.0],
+            [2.0, 0.0, -1.0],
             [0.0, 0.0, 0.0],     
         ]).to(self._motions_mean_cmd.device)
         # hard
@@ -319,6 +322,9 @@ class AMPLoader:
             3,3,3,3,    # side
             4,4,4,4,4,4,    # turn
             5,       # idle
+            6,
+            7,7,
+            8,       # tabu
         ])
         self.motion_cmds_abs = self._motions_mean_cmd.abs().max(dim=0)[0]
         self.motion_cmds_std = self._motions_mean_cmd.std(dim=0)
@@ -618,7 +624,7 @@ class AMPLoader:
             if skill_id < 0:
                 # candidate_motion = torch.arange(num_motions-8, device=device,)
                 self.sc_motion_idx += 1
-                self.sc_motion_idx = self.sc_motion_idx % (num_motions-1)
+                self.sc_motion_idx = self.sc_motion_idx % (num_motions-5)
                 selected_motion = torch.full(
                     (len(batch_ids),),
                     self.sc_motion_idx,
@@ -635,7 +641,7 @@ class AMPLoader:
                 # 3. cmd matching
                 # --------------------------------------------------
                 cmd_min = torch.tensor([-0.6, -0.6, -1.0], device=device,)
-                cmd_max = torch.tensor([1.5, 0.6, 1.0], device=device,)
+                cmd_max = torch.tensor([3.0, 0.6, 1.0], device=device,)
                 cmd_norm = (cmd_sub - cmd_min) / (cmd_max - cmd_min)
                 motion_norm = (candidate_cmd - cmd_min) / (cmd_max - cmd_min)
                 dist = torch.cdist(cmd_norm, motion_norm,)
@@ -702,12 +708,15 @@ class AMPLoader:
         # skill[(vx > 1.5) & (vy.abs() < 0.1) & (wz <= -0.02)] = 11 # run_l
 
         
-        skill[(vx <= 1.5) & (vx > 0) & (vy.abs() == 0) & (wz.abs() == 0)] = 0 
+        skill[(vx <= 1.5) & (vx > 0) & (vy.abs() == 0) & (wz.abs() == 0)] = 0 # forward
         skill[(vx <= 1.5) & (vx > 0) & (vy.abs() == 0) & (wz.abs() > 0)] = 1
         skill[(vx < 0) & (vy.abs() == 0) & (wz.abs() == 0)] = 2
         skill[(vx.abs() == 0) & (vy.abs() > 0) & (wz.abs() == 0) ] = 3
         skill[(vx.abs() == 0) & (vy.abs() == 0) & (wz.abs() > 0)] = 4
-        skill[(vx.abs() == 0) & (vy.abs() == 0 ) & (wz.abs() == 0) & (stand_flag==1)] = 5
+        skill[(vx.abs() == 0) & (vy.abs() == 0 ) & (wz.abs() == 0) & (stand_flag == 1.0)] = 5
+        skill[(vx > 1.5) & (vy.abs() == 0 ) & (wz.abs() == 0)] = 6
+        skill[(vx > 1.5)  & (vy.abs() == 0) & (wz.abs() > 0)] = 7
+        skill[(vx.abs() == 0) & (vy.abs() == 0 ) & (wz.abs() == 0) & (stand_flag == -1.0)] = 8
         # skill[(vx > 1.5) & (vy.abs() == 0 ) & (wz.abs() == 0)] = 6
         # skill[(vx > 1.5)  & (vy.abs() == 0) & (wz.abs() > 0)] = 7
         

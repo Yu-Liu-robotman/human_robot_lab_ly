@@ -47,11 +47,11 @@ class TlibotCustomCfg:
 
 @configclass
 class T2proRewardCfg(RewardCfg):
-    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=3.0, params={"std": 0.5})
-    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=3.0, params={"std": 0.5})
+    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=3.0, params={"std": 0.25})
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=3.0, params={"std": 0.25})
     feet_air_time = RewTerm(
         func=mdp.adaptive_feet_air_time_positive_biped,
-        weight=1.0,
+        weight=1.5,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
             "low_speed_threshold": 0.4,
@@ -59,6 +59,18 @@ class T2proRewardCfg(RewardCfg):
             "stand_cmd": True,
         },
     )
+
+    feet_swing_height = RewTerm(
+        func=mdp.feet_swing_height,
+        weight=0.5,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+            "target_height": 0.10,
+            "sigma": 0.02
+        },
+    )
+
     alive = RewTerm(func=mdp.dwaq_alive, weight=0.15) 
     # # 奖励直膝行走
     # target_base_height = RewTerm(func=mdp.target_base_height, weight=1.0, 
@@ -192,6 +204,9 @@ class T2proRewardCfg(RewardCfg):
     # 优化前向行走不灵敏
     dont_wait = RewTerm(func=mdp.dont_wait, weight=-1.0)
     dont_wait_height = RewTerm(func=mdp.dont_wait_height, weight=-1.0)
+
+    # 优化踏步飘移
+    dont_vel_tabu = RewTerm(func=mdp.dont_vel_tabu, weight=-1.0)
     
     zero_double_support_penalize = RewTerm(
         func=mdp.zero_double_support_penalize,
@@ -215,11 +230,11 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         self.scene.robot = T2PRO
         # self.scene.terrain_type = "plane"
         self.scene.terrain_type = "generator"
-        self.scene.terrain_generator = SLOPE_TERRAINS_CFG #DWAQ_TERRAINS_CFG # ROUGH_TERRAINS_CFG
+        self.scene.terrain_generator = DWAQ_TERRAINS_CFG # ROUGH_TERRAINS_CFG
         self.robot.terminate_contacts_body_names = ["base_link"]
         self.robot.feet_body_names = [".*ankle_roll.*"]
         self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = ["base_link"]
-        self.commands.ranges.lin_vel_x = (-0.6, 1.5)
+        self.commands.ranges.lin_vel_x = (-0.6, 3.0)
         self.commands.ranges.lin_vel_y = (-0.6, 0.6)
         self.commands.ranges.ang_vel_z = (-1.0, 1.0)
         self.commands.rel_standing_envs = 0.2
@@ -231,7 +246,7 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         # Privileged information for Critic
         self.scene.privileged_info.enable_feet_info = False  # feet_pos + feet_vel (12 dim)
         self.scene.privileged_info.enable_feet_contact_force = False  # contact force (6 dim)
-        self.scene.privileged_info.enable_root_height = False  # root height (1 dim)
+        self.scene.privileged_info.enable_root_height = True  # root height (1 dim)
         # Height scanner - asymmetric AC (actor is blind, critic has terrain info)
         self.scene.height_scanner.enable_height_scan = True
         self.scene.height_scanner.critic_only = True  # Actor is blind
@@ -461,6 +476,12 @@ class T2proAmpDWAQFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/121-0511_turn_right01_50_200.txt",
                         # 站立
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/stand11-0511_0_200.txt",
+                        # 跑步
+                        "humanoid/envs/t2pro_20dof_amp/datasets/run/txt/run2_subject1_1850_1930.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/run/txt/run2_subject1_2030_2130.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/run/txt/run2_subject1_2353_2430.txt",
+                        # 踏步
+                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/t2pro_tb_50_250.txt"
                         ]
     amp_num_preload_transitions = 200000
     amp_task_reward_lerp = 0.5

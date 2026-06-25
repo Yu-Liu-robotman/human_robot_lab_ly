@@ -354,8 +354,9 @@ class T2proEnv(BaseEnv):
         
         # Add root height (1 dim)
         if priv_cfg.enable_root_height:
-            root_height = robot.data.root_pos_w[:, 2:3]  # (num_envs, 1)
-            critic_obs_list.append(root_height)
+            terrain_height = self.terrain_height_at_feet.mean(dim=1)
+            base_height = robot.data.root_pos_w[:, 2] - terrain_height
+            critic_obs_list.append(base_height.unsqueeze(-1))
         current_critic_obs = torch.cat(critic_obs_list, dim=-1)
 
         return current_actor_obs, current_critic_obs

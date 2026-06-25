@@ -136,7 +136,7 @@ class BaseEnvCfg:
                 mode="startup",
                 params={
                     "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-                    "mass_distribution_params": (-0.5, 5.0),
+                    "mass_distribution_params": (-2.0, 2.0),
                     "operation": "add",
                 },
             ),
