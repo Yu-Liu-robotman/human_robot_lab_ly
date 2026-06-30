@@ -121,7 +121,7 @@ def policy_exported_param(env):
             dof_names.append("joint_arm_right_wristy")
        
     exp_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    if env.cfg.experiment_name == "t2pro_20dof_amp_dwaq_flat":
+    if env.cfg.experiment_name == "t2pro_20dof_amp_dwaq_flat" or env.cfg.experiment_name == "t2pro_12dof_amp_dwaq_flat":
         frame_stack = env.cfg.robot.hist_obs_num
     else:
         frame_stack = env.cfg.robot.actor_obs_history_length
@@ -266,6 +266,8 @@ def play():
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
     if env_class_name == "t2pro_20dof_amp_dwaq_flat":
         export_dwaq_policy(resume_path)
+    elif env_class_name == "t2pro_12dof_amp_dwaq_flat":
+        export_dwaq_policy(checkpoint_path=resume_path, num_obs=env.num_single_obs, num_actions=env.num_actions, )
     else:
         export_policy_as_jit(runner.alg.policy, runner.obs_normalizer, path=export_model_dir, filename="policy.pt")
         export_policy_as_onnx(
