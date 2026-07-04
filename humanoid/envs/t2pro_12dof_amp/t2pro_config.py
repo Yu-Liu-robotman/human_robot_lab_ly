@@ -3,7 +3,7 @@ from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
 
 import humanoid.mdp as mdp
-from humanoid.assets.t2pro import T2PRO
+from humanoid.assets.t2pro import T2PRO, T2PRO_ACTION_SCALE, KDS, KPS
 from humanoid.envs.base.base_env_config import (  # noqa:F401
     BaseAgentCfg,
     BaseEnvCfg,
@@ -79,7 +79,7 @@ class T2proRewardCfg(RewardCfg):
     ang_vel_xy_l2 = RewTerm(func=mdp.mjlab_body_angular_velocity_penalty, weight=-0.05,  params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link")},)
     energy = RewTerm(func=mdp.energy, weight=-1e-3)
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.005)
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
     dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-10.0)
     undesired_contacts = RewTerm(
         func=mdp.undesired_contacts,
@@ -136,6 +136,15 @@ class T2proRewardCfg(RewardCfg):
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=[".*_hip_roll.*", ".*_hip_yaw.*"]
             )
+        },
+    )
+    
+    joint_deviation_knee = RewTerm(
+        func=mdp.single_support_joint_deviation_l1,
+        weight=-1.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+            "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_knee.*"])
         },
     )
     # feet_stumble = RewTerm(
@@ -220,6 +229,8 @@ class T2proRewardCfg(RewardCfg):
   
 @configclass
 class T2proFlatEnvCfg(BaseEnvCfg):
+    kds = KDS
+    kps = KPS
     reward = T2proRewardCfg()
     custom: TlibotCustomCfg = TlibotCustomCfg()
     key_pos_list = KEY_POS_LIST
@@ -230,10 +241,11 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         self.scene.robot = T2PRO
         # self.scene.terrain_type = "plane"
         self.scene.terrain_type = "generator"
-        self.scene.terrain_generator = DWAQ_TERRAINS_CFG # ROUGH_TERRAINS_CFG
+        self.scene.terrain_generator = SLOPE_TERRAINS_CFG # ROUGH_TERRAINS_CFG
         self.robot.terminate_contacts_body_names = ["base_link"]
-        self.robot.feet_body_names = [".*ankle_roll.*"]
+        self.robot.feet_body_names = ["leg_left_ankle_roll_link", "leg_right_ankle_roll_link"]
         self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = ["base_link"]
+        self.robot.action_scale = T2PRO_ACTION_SCALE
         self.commands.ranges.lin_vel_x = (-0.6, 3.0)
         self.commands.ranges.lin_vel_y = (-0.6, 0.6)
         self.commands.ranges.ang_vel_z = (-1.0, 1.0)
@@ -242,10 +254,10 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         self.commands.heading_command = False
         self.experiment_name = "t2pro_12dof_flat"
         self.rl_version = 2.1
-        self.rand_dof_nums = 8
+        self.rand_dof_nums = 11
         # Privileged information for Critic
-        self.scene.privileged_info.enable_feet_info = False  # feet_pos + feet_vel (12 dim)
-        self.scene.privileged_info.enable_feet_contact_force = False  # contact force (6 dim)
+        self.scene.privileged_info.enable_feet_info = True  # feet_pos + feet_vel (12 dim)
+        self.scene.privileged_info.enable_feet_contact_force = True  # contact force (6 dim)
         self.scene.privileged_info.enable_root_height = True  # root height (1 dim)
         # Height scanner - asymmetric AC (actor is blind, critic has terrain info)
         self.scene.height_scanner.enable_height_scan = True

@@ -77,7 +77,7 @@ class BaseEnvCfg:
         actor_obs_history_length=1,
         critic_obs_history_length=1,
         hist_obs_num = 5,
-        action_scale=0.25,
+        action_scale=MISSING,
         terminate_contacts_body_names=MISSING,
         feet_body_names=MISSING,
     )
@@ -92,6 +92,9 @@ class BaseEnvCfg:
             joint_vel=1.0,
             actions=1.0,
             height_scan=1.0,
+            feet_pos=1.0,
+            feet_vel=1.0,
+            contact_force = 0.01,
         ),
         clip_observations=100.0,
         clip_actions=100.0,
@@ -125,8 +128,8 @@ class BaseEnvCfg:
                 mode="startup",
                 params={
                     "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-                    "static_friction_range": (0.6, 1.0),
-                    "dynamic_friction_range": (0.4, 1.0),
+                    "static_friction_range": (0.3, 1.0),
+                    "dynamic_friction_range": (0.3, 1.0),
                     "restitution_range": (0.0, 0.0),
                     "num_buckets": 64,
                 },
@@ -136,8 +139,47 @@ class BaseEnvCfg:
                 mode="startup",
                 params={
                     "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-                    "mass_distribution_params": (-2.0, 2.0),
+                    "mass_distribution_params": (-2.0, 5.0),
                     "operation": "add",
+                },
+            ),
+            randomize_rigid_body_com = EventTerm(
+                func=mdp.randomize_rigid_body_com,
+                mode="startup",
+                params={
+                    "asset_cfg": SceneEntityCfg("robot", body_names=["base_link"]),
+                    "com_range": {"x": (-0.02, 0.02), "y": (-0.02, 0.02), "z": (-0.02, 0.02)},
+                },
+            ),
+            scale_link_mass = EventTerm(
+                func=mdp.randomize_rigid_body_mass,
+                mode="startup",
+                params={
+                    "asset_cfg": SceneEntityCfg("robot", body_names=[".*"]),
+                    "mass_distribution_params": (0.8, 1.2),
+                    "operation": "scale",
+                },
+            ),
+            scale_joint_pd = EventTerm(
+                func=mdp.randomize_actuator_gains,
+                mode="startup",
+                params={
+                    "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+                    "stiffness_distribution_params": (0.8, 1.2),  # ±20% Kp
+                    "damping_distribution_params": (0.8, 1.2),    # ±20% Kd
+                    "operation": "scale",
+                    "distribution": "uniform",
+                },
+            ),
+            scale_joint_param = EventTerm(
+                func=mdp.randomize_joint_parameters,
+                mode="startup",
+                params={
+                    "asset_cfg": SceneEntityCfg("robot", joint_names=[".*"]),
+                    "friction_distribution_params": (0.8, 1.2),
+                    "armature_distribution_params": (0.8, 1.2),
+                    "operation": "scale",
+                    "distribution": "uniform",
                 },
             ),
             reset_base=EventTerm(
@@ -169,28 +211,6 @@ class BaseEnvCfg:
                 interval_range_s=(10.0, 15.0),
                 params={"velocity_range": {"x": (-1.0, 1.0), "y": (-1.0, 1.0)}},
             ),
-            scale_joint_pd = EventTerm(
-                func=mdp.randomize_actuator_gains,
-                mode="startup",
-                params={
-                    "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-                    "stiffness_distribution_params": (0.8, 1.2),  # ±20% Kp
-                    "damping_distribution_params": (0.8, 1.2),    # ±20% Kd
-                    "operation": "scale",
-                    "distribution": "uniform",
-                },
-            ),
-            # scale_joint_param = EventTerm(
-            #     func=mdp.randomize_joint_parameters,
-            #     mode="startup",
-            #     params={
-            #         "asset_cfg": SceneEntityCfg("robot", joint_names=[".*"]),
-            #         "friction_distribution_params": (0.8, 1.2),
-            #         "armature_distribution_params": (0.8, 1.2),
-            #         "operation": "scale",
-            #         "distribution": "uniform",
-            #     },
-            # ),
         ),
         action_delay=ActionDelayCfg(enable=False, params={"max_delay": 5, "min_delay": 0}),
     )

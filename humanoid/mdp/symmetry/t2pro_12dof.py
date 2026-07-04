@@ -115,7 +115,7 @@ def _transform_critic_obs_left_right(env: BaseEnv, obs: torch.Tensor) -> torch.T
     # copy observation tensor
     obs = obs.clone()
     device = obs.device
-    obs_dim = 241
+    obs_dim = 259
     assert obs.shape[1] % obs_dim == 0, \
         f"Obs dim {obs.shape[1]} is not divisible by {obs_dim}"
     num_frames = obs.shape[1] // obs_dim
@@ -139,6 +139,12 @@ def _transform_critic_obs_left_right(env: BaseEnv, obs: torch.Tensor) -> torch.T
     contact = obs[..., 51:53].clone()
     obs[..., 51:53] = contact[..., [1, 0]]
     obs = obs.view(obs.shape[0], num_frames * obs_dim)
+    # feet pos
+    obs[..., 53:59] = _mirror_lr_vec6(obs[..., 53:59], device)
+    # feet vel
+    obs[..., 59:65] = _mirror_lr_vec6(obs[..., 59:65], device)                                                                                    
+    # feet force
+    obs[..., 65:71] = _mirror_lr_vec6(obs[..., 65:71], device)
     return obs
 
 
@@ -206,3 +212,10 @@ def _switch_joints_left_right(joint_data: torch.Tensor) -> torch.Tensor:
     joint_data_switched[..., [1, 2, 5, 7, 8, 11]] = -1 * joint_data_switched[..., [1, 2, 5, 7, 8, 11]]
     
     return joint_data_switched
+
+def _mirror_lr_vec6(x, device):
+    # x: (..., 6), [Lx,Ly,Lz,Rx,Ry,Rz]
+    left = x[..., :3]
+    right = x[..., 3:]
+    sign = torch.tensor([1, -1, 1], device=device)
+    return torch.cat([right * sign, left * sign], dim=-1)

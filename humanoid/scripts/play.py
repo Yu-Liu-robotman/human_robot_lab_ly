@@ -125,7 +125,14 @@ def policy_exported_param(env):
         frame_stack = env.cfg.robot.hist_obs_num
     else:
         frame_stack = env.cfg.robot.actor_obs_history_length
+    KDS = env.cfg.kds
+    KPS = env.cfg.kps
+    kds = env.build_scale_list(KDS, env.dof_names)
+    kps = env.build_scale_list(KPS, env.dof_names)
     policy_param = {
+        "action_scale": env.action_scale_list,
+        "kp": kps,
+        "kd": kds,
         "rl_version": env.rl_version,
         "default_joint_pos": default_joint_pos,
         "cycle_time_range": env.cfg.cycle_time_range,
@@ -142,7 +149,6 @@ def policy_exported_param(env):
         "clip_observations": env.cfg.normalization.clip_observations,
         "num_observations": env.num_single_obs * frame_stack,
         "clip_actions": env.cfg.normalization.clip_actions,
-        "action_scale": env.cfg.robot.action_scale,
         "num_forcesensor": 2,
 
         "obs_scales_dof_pos": env.cfg.normalization.obs_scales.joint_pos,
@@ -267,7 +273,7 @@ def play():
     if env_class_name == "t2pro_20dof_amp_dwaq_flat":
         export_dwaq_policy(resume_path)
     elif env_class_name == "t2pro_12dof_amp_dwaq_flat":
-        export_dwaq_policy(checkpoint_path=resume_path, num_obs=env.num_single_obs, num_actions=env.num_actions, )
+        export_dwaq_policy(checkpoint_path=resume_path, num_obs=env.num_single_obs, num_actions=env.num_actions,)# device="cuda:0")
     else:
         export_policy_as_jit(runner.alg.policy, runner.obs_normalizer, path=export_model_dir, filename="policy.pt")
         export_policy_as_onnx(

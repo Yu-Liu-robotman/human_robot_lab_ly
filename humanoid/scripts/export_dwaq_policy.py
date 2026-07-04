@@ -133,6 +133,7 @@ def export_dwaq_policy(
     num_actions: int = 20,
     dwaq_obs_history_length: int = 5,
     cenet_out_dim: int = 19,
+    device: str = "cpu",
 ):
     """
     导出 DWAQ 策略为 TorchScript
@@ -146,7 +147,7 @@ def export_dwaq_policy(
         cenet_out_dim: Encoder 输出维度 (默认 19)
     """
     print(f"[INFO] 加载 checkpoint: {checkpoint_path}")
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     
     # 创建导出器
     exporter = DWAQPolicyExporter(
@@ -171,8 +172,8 @@ def export_dwaq_policy(
     if 'obs_norm_mean' in checkpoint and 'obs_norm_var' in checkpoint:
         print("[INFO] 加载归一化参数")
         # 扩展归一化参数到完整历史长度
-        mean = checkpoint['obs_norm_mean'].cpu()
-        var = checkpoint['obs_norm_var'].cpu()
+        mean = checkpoint['obs_norm_mean'].to(device)
+        var = checkpoint['obs_norm_var'].to(device)
         
         # 复制到历史长度
         full_mean = mean.repeat(dwaq_obs_history_length)

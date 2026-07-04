@@ -19,7 +19,7 @@ from humanoid.utils.env_utils.scene import SceneCfg
 from humanoid.envs.base.base_env import BaseEnv
 from humanoid.mdp.command import TlibotUniformVelocityCommand
 import isaaclab.utils.math as math_utils
-
+import re
 @torch.jit.script
 def copysign(a, b):
     a = torch.tensor(a, device=b.device, dtype=torch.float).repeat(b.shape[0])
@@ -123,7 +123,23 @@ class T2proEnv(BaseEnv):
         if "startup" in self.event_manager.available_modes:
             self.event_manager.apply(mode="startup")
         self.reset(env_ids)
+    
+    def build_scale_list(self, pattern_scale, joint_order):
+        scale_list = []
 
+        for j in joint_order:
+            matched = False
+
+            for pattern, value in pattern_scale.items():
+                if re.fullmatch(pattern, j):
+                    scale_list.append(value)
+                    matched = True
+                    break
+
+            if not matched:
+                raise ValueError(f"No scale matched for joint: {j}")
+
+        return scale_list
 
     def init_buffers(self):
         self.extras = {}
@@ -134,7 +150,6 @@ class T2proEnv(BaseEnv):
         self.clip_actions = self.cfg.normalization.clip_actions
         self.clip_obs = self.cfg.normalization.clip_observations
         print(self.robot.data.joint_names)
-        self.action_scale = self.cfg.robot.action_scale
         self.action_buffer = DelayBuffer(
             self.cfg.domain_rand.action_delay.params["max_delay"], self.num_envs, device=self.device
         )
@@ -190,6 +205,12 @@ class T2proEnv(BaseEnv):
             "arm_right_shoulder_yaw_joint",
             "arm_right_elbow_joint",
         ]
+        self.action_scale_list = self.build_scale_list(self.cfg.robot.action_scale, self.dof_names)
+        self.action_scale = torch.tensor(
+            self.action_scale_list,
+            device=self.device,
+            dtype=torch.float,
+        )
         self.dof_ids, _ = self.robot.find_joints(
             name_keys=self.dof_names,
             preserve_order=True,
@@ -251,7 +272,6 @@ class T2proEnv(BaseEnv):
         self.key_pos_idx, _= self.robot.find_bodies(
             name_keys=self.cfg.key_pos_list, preserve_order=True
         )
-        
         self.anchor_idx, _ = self.robot.find_bodies(
             name_keys=[self.cfg.anchor_name], preserve_order=True
         )

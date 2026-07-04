@@ -3,7 +3,7 @@ from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
 
 import humanoid.mdp as mdp
-from humanoid.assets.t2pro import T2PRO
+from humanoid.assets.t2pro import T2PRO, T2PRO_ACTION_SCALE
 from humanoid.envs.base.base_env_config import (  # noqa:F401
     BaseAgentCfg,
     BaseEnvCfg,
@@ -79,7 +79,7 @@ class T2proRewardCfg(RewardCfg):
     ang_vel_xy_l2 = RewTerm(func=mdp.mjlab_body_angular_velocity_penalty, weight=-0.05,  params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link")},)
     energy = RewTerm(func=mdp.energy, weight=-1e-3)
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.005)
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
     dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-10.0)
     undesired_contacts = RewTerm(
         func=mdp.undesired_contacts,
@@ -217,7 +217,14 @@ class T2proRewardCfg(RewardCfg):
             "force_threshold": 5.0,
         },
     )
-  
+    joint_deviation_knee = RewTerm(
+        func=mdp.single_support_joint_deviation_l1,
+        weight=-1.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+            "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_knee.*"])
+        },
+    )
 @configclass
 class T2proFlatEnvCfg(BaseEnvCfg):
     reward = T2proRewardCfg()
@@ -242,7 +249,8 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         self.commands.heading_command = False
         self.experiment_name = "t2pro_20dof_flat"
         self.rl_version = 2.1
-        self.rand_dof_nums = 0
+        self.rand_dof_nums = 3
+        self.robot.action_scale = T2PRO_ACTION_SCALE
         # Privileged information for Critic
         self.scene.privileged_info.enable_feet_info = False  # feet_pos + feet_vel (12 dim)
         self.scene.privileged_info.enable_feet_contact_force = False  # contact force (6 dim)

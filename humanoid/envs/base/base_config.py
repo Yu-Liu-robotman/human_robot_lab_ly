@@ -67,6 +67,9 @@ class ObsScalesCfg:
     joint_vel: float = 1.0
     actions: float = 1.0
     height_scan: float = 1.0
+    feet_pos: float = 1.0
+    feet_vel: float = 1.0
+    contact_force: float = 0.01
 
 
 @configclass
@@ -132,6 +135,45 @@ class EventCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "mass_distribution_params": (-5.0, 5.0),
             "operation": "add",
+        },
+    )
+    randomize_rigid_body_com = EventTerm(
+        func=mdp.randomize_rigid_body_com,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=["base_link"]),
+            "com_range": {"x": (-0.02, 0.02), "y": (-0.02, 0.02), "z": (-0.02, 0.02)},
+        },
+    )
+    scale_link_mass = EventTerm(
+        func=mdp.randomize_rigid_body_mass,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=[".*"]),
+            "mass_distribution_params": (0.8, 1.2),
+            "operation": "scale",
+        },
+    )
+    scale_joint_pd = EventTerm(
+        func=mdp.randomize_actuator_gains,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "stiffness_distribution_params": (0.8, 1.2),  # ±20% Kp
+            "damping_distribution_params": (0.8, 1.2),    # ±20% Kd
+            "operation": "scale",
+            "distribution": "uniform",
+        },
+    )
+    scale_joint_param = EventTerm(
+        func=mdp.randomize_joint_parameters,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=[".*"]),
+            "friction_distribution_params": (0.8, 1.2),
+            "armature_distribution_params": (0.8, 1.2),
+            "operation": "scale",
+            "distribution": "uniform",
         },
     )
     reset_base = EventTerm(

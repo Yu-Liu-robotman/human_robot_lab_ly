@@ -264,7 +264,11 @@ class HumaRobotSimRos(Node):
             "joint_R_knee": "leg_right_knee_joint",
             "joint_R_ankleR": "leg_right_ankle_roll_joint",
             "joint_R_ankleP": "leg_right_ankle_pitch_joint",
-
+            
+            "joint_torsoy1": "joint_torsoy1",
+            "joint_torsop": "torso_pitch_joint",
+            "joint_torsor": "torso_roll_joint",
+        
             "joint_arm_left_humeralp": "arm_left_shoulder_pitch_joint",
             "joint_arm_left_humeralr": "arm_left_shoulder_roll_joint",
             "joint_arm_left_humeraly": "arm_left_shoulder_yaw_joint",
@@ -312,31 +316,40 @@ class HumaRobotSimRos(Node):
         self.tau = np.zeros((mj_joint_num), dtype=np.double)
         self.step_sycle_time = param['cycle_time']
         self.default_joint_pos = param['default_joint_pos']
-        print("self.default_joint_pos:", self.default_joint_pos)
-        self.all_default_joint_pos = [
+        self.all_default_joint_pos = np.array([
             -0.03, 0.0, 0.0, 0.1, -0.07, 0.0,
             -0.03, 0.0, 0.0, 0.1, -0.07, 0.0,
+            0, 0, 0,
             0.2, 0.1, 0, 1.1,
             0.2, -0.1, 0, 1.1, 
-        ]
-        print("self.all_default_joint_pos:", self.all_default_joint_pos)
-        kps = [ 200, 200, 200, 200, 200, 100,
-                200, 200, 200, 200, 200, 100, 
+        ])
+        kps = np.array([ 100, 80, 80, 100, 40, 30,
+                100, 80, 80, 100, 40, 30,
+                400, 400, 400,
                 100, 100, 100, 100, 
                 100, 100, 100, 100, 
-            ]
-        kds = [ 10, 10, 10, 10, 10, 5, 
-                10, 10, 10, 10, 10, 5, 
+            ])
+        kds = np.array([ 10, 8, 8, 10, 4, 3, 
+                10, 8, 8, 10, 4, 3,
+                20, 20, 20, 
                 5, 5, 5, 5,
                 5, 5, 5, 5,
-            ]
+            ])
         # kps = [400] * 20
         # kds = [40] * 20
-        tau_limit = [100, 70, 70, 100, 40, 30,
-                     100, 70, 70, 100, 40, 30,
+        tau_limit = [80, 60, 60, 80, 40, 20,
+                     80, 60, 60, 80, 40, 20,
+                     50, 50, 50,
                      50, 50, 50, 50,
                      50, 50, 50, 50,
                     ]
+        print("self.kp:", param["kp"])
+        print("self.dof_ids:", dof_ids)
+        kps[dof_ids] = np.array(param["kp"])
+        kds[dof_ids] = np.array(param["kd"])
+        self.all_default_joint_pos[dof_ids] = np.array(param["default_joint_pos"])
+        print("self.all_default_joint_pos:", self.all_default_joint_pos)
+
         pd_kps = np.array(kps, dtype=np.double)
         pd_kds = np.array(kds, dtype=np.double)
         tau_limit = np.array(tau_limit, dtype=np.double)
