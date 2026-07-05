@@ -3,7 +3,7 @@ from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
 
 import humanoid.mdp as mdp
-from humanoid.assets.t2pro import T2PRO, T2PRO_ACTION_SCALE
+from humanoid.assets.t2pro import T2PRO, T2PRO_ACTION_SCALE, KDS, KPS
 from humanoid.envs.base.base_env_config import (  # noqa:F401
     BaseAgentCfg,
     BaseEnvCfg,
@@ -227,6 +227,8 @@ class T2proRewardCfg(RewardCfg):
     )
 @configclass
 class T2proFlatEnvCfg(BaseEnvCfg):
+    kds = KDS
+    kps = KPS
     reward = T2proRewardCfg()
     custom: TlibotCustomCfg = TlibotCustomCfg()
     key_pos_list = KEY_POS_LIST
@@ -238,7 +240,7 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         # self.scene.terrain_type = "plane"
         self.scene.terrain_type = "generator"
         self.scene.terrain_generator = DWAQ_TERRAINS_CFG # ROUGH_TERRAINS_CFG
-        self.robot.terminate_contacts_body_names = ["base_link"]
+        self.robot.terminate_contacts_body_names = ["base_link", "torso_roll_link"]
         self.robot.feet_body_names = [".*ankle_roll.*"]
         self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = ["base_link"]
         self.commands.ranges.lin_vel_x = (-0.6, 3.0)
