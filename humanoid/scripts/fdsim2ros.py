@@ -337,12 +337,13 @@ class HumaRobotSimRos(Node):
             ])
         # kps = [400] * 20
         # kds = [40] * 20
-        tau_limit = [80, 60, 60, 80, 40, 20,
-                     80, 60, 60, 80, 40, 20,
-                     50, 50, 50,
-                     50, 50, 50, 50,
-                     50, 50, 50, 50,
+        tau_limit = [100, 75, 75, 100, 50, 25,
+                     100, 75, 75, 100, 50, 25,
+                     60, 60, 50,
+                     60, 60, 30, 30,
+                     60, 60, 30, 30,
                     ]
+        # tau_limit=[150]*23
         print("self.kp:", param["kp"])
         print("self.dof_ids:", dof_ids)
         kps[dof_ids] = np.array(param["kp"])
@@ -491,7 +492,9 @@ class HumaRobotSimRos(Node):
         # 欧拉角
         eu_ang = quaternion_to_euler_array(waist_orient_quat)
         eu_ang[eu_ang > math.pi] -= 2 * math.pi
-        # eu_ang = self.euler_apply_inverse(eu_ang, np.array([0, 0, -1]))
+        # eu_ang = eu_ang #- np.array([0.01, -0.09, 0.17])
+        print("waist_orient_quat:", eu_ang)
+        eu_ang = self.euler_apply_inverse(eu_ang, np.array([0, 0, -1]))
         clk_a, clk_b, phase = self.gen_rl_clock()
         global stand_flag
         if param["rl_version"] == 1.0:
@@ -520,8 +523,9 @@ class HumaRobotSimRos(Node):
         obs[0, param['obs_index_imu_waist_angvel'] : param['obs_index_imu_waist_angvel'] + len(waist_omega)] =\
             waist_omega * param['obs_scales_imu_waist_angvel']
         obs[0, param['obs_index_imu_waist_orientation'] : param['obs_index_imu_waist_orientation'] + len(eu_ang)] =\
-            self.quat_apply_inverse(
-                    waist_orient_quat, np.array([0, 0, -1])) * param['obs_scales_imu_waist_orientation']
+            eu_ang
+            # self.quat_apply_inverse(
+            #         waist_orient_quat, np.array([0, 0, -1])) * param['obs_scales_imu_waist_orientation']
 
         if param['has_obs_torque']:
             obs[0, param['obs_index_torque'] : param['obs_index_torque'] + len(self.obs_torques)] =\
