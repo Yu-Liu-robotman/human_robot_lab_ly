@@ -265,7 +265,7 @@ class HumaRobotSimRos(Node):
             "joint_R_ankleR": "leg_right_ankle_roll_joint",
             "joint_R_ankleP": "leg_right_ankle_pitch_joint",
             
-            "joint_torsoy1": "joint_torsoy1",
+            "joint_torsoy1": "torso_yaw_joint",
             "joint_torsop": "torso_pitch_joint",
             "joint_torsor": "torso_roll_joint",
         
@@ -325,7 +325,7 @@ class HumaRobotSimRos(Node):
         ])
         kps = np.array([ 100, 80, 80, 100, 40, 30,
                 100, 80, 80, 100, 40, 30,
-                400, 400, 400,
+                400, 200, 1160,
                 100, 100, 100, 100, 
                 100, 100, 100, 100, 
             ])

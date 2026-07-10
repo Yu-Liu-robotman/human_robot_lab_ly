@@ -1280,3 +1280,21 @@ def feet_swing_height(
     reward = reward * (~contact).float()
 
     return reward.sum(dim=-1)
+
+def feet_swing_height_bin(
+    env: BaseEnv,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    target_height: float = 0.08,
+) -> torch.Tensor:
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    asset: Articulation = env.scene[asset_cfg.name]
+    # 是否接触地面
+    contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0
+    # 足端高度
+    feet_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]
+    # 高于目标高度即奖励1，否则0
+    reward = (feet_z > target_height).float()
+    # 仅对摆动腿奖励
+    reward = reward * (~contact).float()
+    return reward.sum(dim=-1)

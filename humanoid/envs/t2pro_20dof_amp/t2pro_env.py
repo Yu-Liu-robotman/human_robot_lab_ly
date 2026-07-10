@@ -196,6 +196,9 @@ class T2proEnv(BaseEnv):
             "leg_right_knee_joint",
             "leg_right_ankle_pitch_joint",
             "leg_right_ankle_roll_joint",
+            "torso_yaw_joint",
+            "torso_pitch_joint",
+            "torso_roll_joint",
             "arm_left_shoulder_pitch_joint",
             "arm_left_shoulder_roll_joint",
             "arm_left_shoulder_yaw_joint",
@@ -782,14 +785,14 @@ class T2proEnv(BaseEnv):
         joint_pos = self.dof_pos[:, [
             0, 1, 2, 3, 4, 5, 
             6, 7, 8, 9, 10, 11,
-            12, 13, 14, 15,
-            16, 17, 18, 19
+            15, 16, 17, 18,
+            19, 20, 21, 22
         ]]
         joint_vel = self.dof_vel[:, [
             0, 1, 2, 3, 4, 5, 
             6, 7, 8, 9, 10, 11,
-            12, 13, 14, 15,
-            16, 17, 18, 19
+            15, 16, 17, 18,
+            19, 20, 21, 22
         ]]
 
         num_body = len(self.key_pos_idx)

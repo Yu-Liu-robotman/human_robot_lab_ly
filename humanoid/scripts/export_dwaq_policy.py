@@ -129,8 +129,8 @@ class EmpiricalNormalization(nn.Module):
 def export_dwaq_policy(
     checkpoint_path: str,
     output_path: str = None,
-    num_obs: int = 72,
-    num_actions: int = 20,
+    num_obs: int = 81,
+    num_actions: int = 23,
     dwaq_obs_history_length: int = 5,
     cenet_out_dim: int = 19,
     device: str = "cpu",
