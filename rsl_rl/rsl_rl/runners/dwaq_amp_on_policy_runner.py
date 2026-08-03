@@ -120,7 +120,7 @@ class DreamWaQAmpOnPolicyRunner:
         amp_data = AMPLoader(
             device,
             time_between_frames=self.env.step_dt,
-            preload_transitions=True,
+            preload_transitions=False,
             all_body_names=self.env.robot.data.body_names,
             body_names=train_cfg["amp_body_names"],
             anchor_name=train_cfg["amp_anchor_name"], 

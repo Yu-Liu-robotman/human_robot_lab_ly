@@ -39,7 +39,7 @@ class Discriminator(nn.Module):
         task_reward_lerp (float): Interpolation factor for combining rewards.
     """
 
-    def __init__(self, input_dim, amp_reward_coef, hidden_layer_sizes, device, task_reward_lerp=0.0, num_envs=1):
+    def __init__(self, input_dim, amp_reward_coef, hidden_layer_sizes, device, task_reward_lerp=0.0):
         super().__init__()
 
         self.device = device
@@ -57,9 +57,9 @@ class Discriminator(nn.Module):
 
         self.trunk.train()
         self.amp_linear.train()
-        
-        self.task_reward_lerp = torch.ones((num_envs, 1), device=device, dtype=torch.float32)
-        self.task_reward_lerp *= task_reward_lerp
+
+        self.task_reward_lerp = task_reward_lerp
+
     def forward(self, x):
         """
         Forward pass through the discriminator network.
@@ -122,8 +122,8 @@ class Discriminator(nn.Module):
 
             d = self.amp_linear(self.trunk(torch.cat([state, next_state], dim=-1)))
             reward = self.amp_reward_coef * torch.clamp(1 - (1 / 4) * torch.square(d - 1), min=0)
-            # if self.task_reward_lerp > 0:
-            reward = self._lerp_reward(reward, task_reward.unsqueeze(-1))
+            if self.task_reward_lerp > 0:
+                reward = self._lerp_reward(reward, task_reward.unsqueeze(-1))
             self.train()
         return reward.squeeze(), d
 
@@ -139,5 +139,4 @@ class Discriminator(nn.Module):
             torch.Tensor: Interpolated reward.
         """
         r = (1.0 - self.task_reward_lerp) * disc_r + self.task_reward_lerp * task_r
-        
         return r

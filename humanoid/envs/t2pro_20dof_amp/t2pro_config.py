@@ -47,15 +47,15 @@ class TlibotCustomCfg:
 
 @configclass
 class T2proRewardCfg(RewardCfg):
-    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=3.0, params={"std": 0.25})
-    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=3.0, params={"std": 0.25})
+    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=4.0, params={"std": 0.25}) # 3.0
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=4.0, params={"std": 0.25})   # 3.0
     feet_air_time = RewTerm(
         func=mdp.adaptive_feet_air_time_positive_biped,
-        weight=1.0,
+        weight=1.5,  # 1.0
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "low_speed_threshold": 0.35,
-            "high_speed_threshold": 0.6,
+            "low_speed_threshold": 0.20, # 0.35
+            "high_speed_threshold": 0.5, # 0.6
             "stand_cmd": True,
         },
     )
@@ -247,7 +247,7 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         self.commands.ranges.lin_vel_x = (-0.6, 3.0)
         self.commands.ranges.lin_vel_y = (-0.6, 0.6)
         self.commands.ranges.ang_vel_z = (-1.0, 1.0)
-        self.commands.rel_standing_envs = 0.2
+        self.commands.rel_standing_envs = 0.1
         self.commands.ranges.resampling_time_range = (4.0, 10.0)
         self.commands.heading_command = False
         self.experiment_name = "t2pro_20dof_flat"
@@ -326,10 +326,10 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.01,
+        entropy_coef=0.005,
         num_learning_epochs=5,
         num_mini_batches=4,
-        learning_rate=1.0e-4,
+        learning_rate=1.0e-3,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
@@ -340,7 +340,7 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
         rnd_cfg=None,  # RslRlRndCfg()
     )
     clip_actions = None
-    save_interval = 100
+    save_interval = 1000
     runner_class_name = "AmpOnPolicyRunner"
     experiment_name = "t2pro_20dof_amp_flat"
     run_name = ""
@@ -352,37 +352,46 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     load_checkpoint = "model_.*.pt"
 
     # amp parameter
-    amp_reward_coef = 0.3
+    amp_reward_coef = 0.5
     amp_motion_files = [
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/11-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/21-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/31-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/41-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/51-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/61-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/71-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/81-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/91-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/101-0511.txt",
-                        # "humanoid/envs/t2pro_20dof_amp/datasets/txt/111-0511.txt",
-                        # "humanoid/envs/t2pro_20dof_amp/datasets/txt/121-0511.txt",
-                        # "humanoid/envs/t2pro_20dof_amp/datasets/txt/131-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/141-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/151-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/161-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/171-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/181-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/191-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/201-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/211-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/221-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/232-0511.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/stand11-0511.txt"
-                        ]
+                            # 前进
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/11-0511_forward01_150_300.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/21-0511_forward02_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/31-0511_forward03_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/41-0511_forward04_0_150.txt",
+                            # 走转
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/141-0511_move_left01_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/151-0511_move_right01_50_200.txt",
+                            # 后退
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/161-0511_back01_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/171-0511_back02_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/181-0511_back03_50_200.txt",
+                            # "humanoid/envs/t2pro_20dof_amp/datasets/txt/191-0511_back04_50_200.txt",
+                            # 横移
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/201-0511_side_left01_0_150.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/211-0511_side_right_01_0_150.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/221-0511_side_left02_0_150.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/232-0511_side_right_02_0_150.txt",
+                            # 原地转向
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/51-0511_turn_left02_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/71-0511_turn_left03_90_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/91-0511_turn_right02_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/101-0511_turn_right03_50_180.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/111-0511_turn_left01_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/121-0511_turn_right01_50_200.txt",
+                            # 站立
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/stand11-0511_0_200.txt",
+                            # 跑步
+                            "humanoid/envs/t2pro_20dof_amp/datasets/run/txt/run2_subject1_1850_1930.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/run/txt/run2_subject1_2030_2130.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/run/txt/run2_subject1_2353_2430.txt",
+                            # 踏步
+                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/t2pro_tb_50_250.txt"
+                            ]
     amp_num_preload_transitions = 200000
     amp_task_reward_lerp = 0.7
     amp_discr_hidden_dims = [1024, 512, 256]
-    min_normalized_std = [0.05] * 20
+    min_normalized_std = [0.05] * 23
     amp_body_names=KEY_POS_LIST
     amp_anchor_name=ANCHOR_NAME
     
@@ -427,10 +436,10 @@ class T2proAmpDWAQFlatAgentCfg(RslRlOnPolicyRunnerCfg):
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.01,
+        entropy_coef=0.005,
         num_learning_epochs=5,
         num_mini_batches=4,
-        learning_rate=1.0e-4,
+        learning_rate=1.0e-3,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
@@ -446,7 +455,7 @@ class T2proAmpDWAQFlatAgentCfg(RslRlOnPolicyRunnerCfg):
         rnd_cfg=None,  # RslRlRndCfg()
     )
     clip_actions = None
-    save_interval = 100
+    save_interval = 1000
     runner_class_name = "DreamWaQAmpOnPolicyRunner"
     experiment_name = "t2pro_20dof_amp_dwaq_flat"
     run_name = ""
@@ -458,7 +467,7 @@ class T2proAmpDWAQFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     load_checkpoint = "model_.*.pt"
 
     # amp parameter
-    amp_reward_coef = 0.3
+    amp_reward_coef = 0.5 # 0.3
     amp_motion_files = [
                         # 前进
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/11-0511_forward01_150_300.txt",
@@ -472,7 +481,7 @@ class T2proAmpDWAQFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/161-0511_back01_50_200.txt",
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/171-0511_back02_50_200.txt",
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/181-0511_back03_50_200.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/txt/191-0511_back04_50_200.txt",
+                        # "humanoid/envs/t2pro_20dof_amp/datasets/txt/191-0511_back04_50_200.txt",
                         # 横移
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/201-0511_side_left01_0_150.txt",
                         "humanoid/envs/t2pro_20dof_amp/datasets/txt/211-0511_side_right_01_0_150.txt",

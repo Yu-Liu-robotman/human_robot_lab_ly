@@ -24,7 +24,6 @@ import time
 from collections import deque
 
 import torch
-import numbers
 
 import rsl_rl
 from rsl_rl.algorithms import AMPPPO
@@ -125,7 +124,6 @@ class AmpOnPolicyRunner:
             train_cfg["amp_discr_hidden_dims"],
             device,
             train_cfg["amp_task_reward_lerp"],
-            num_envs=self.env.num_envs,
         ).to(self.device)
         min_std = torch.zeros(len(train_cfg["min_normalized_std"]), device=self.device, requires_grad=False)
 
@@ -272,15 +270,7 @@ class AmpOnPolicyRunner:
                     reset_env_ids = self.env.reset_env_ids
                     terminal_amp_states = self.env.get_amp_obs_for_expert_trans()[reset_env_ids]
                     next_amp_obs_with_term[reset_env_ids] = terminal_amp_states
-                    # 加入速度屏蔽
-                    if self.env.cfg.cmd_task_lerp_select:
-                        cmd_x = self.env.commands[:, 0]
-                        self.alg.discriminator.task_reward_lerp = torch.where(
-                                                                    cmd_x > 0.2,
-                                                                    1.0 - cmd_x,
-                                                                    torch.ones_like(cmd_x)
-                                                                ).unsqueeze(-1)
-                    
+
                     rewards = self.alg.discriminator.predict_amp_reward(
                         amp_obs, next_amp_obs_with_term, rewards, normalizer=self.alg.amp_normalizer
                     )[0]
@@ -373,20 +363,10 @@ class AmpOnPolicyRunner:
                     # handle scalar and zero dimensional tensor infos
                     if key not in ep_info:
                         continue
-                    # skip non-scalar entries (dicts, lists, strings)
-                    val = ep_info[key]
-                    if isinstance(val, torch.Tensor):
-                        tensor_val = val
-                    else:
-                        # allow numeric scalars (int/float/bool and numpy numbers)
-                        if isinstance(val, numbers.Number):
-                            tensor_val = torch.tensor([val])
-                        else:
-                            # unsupported type for aggregation (e.g. dict/list/str) -> skip
-                            continue
-                    if len(tensor_val.shape) == 0:
-                        tensor_val = tensor_val.unsqueeze(0)
-                    ep_info[key] = tensor_val
+                    if not isinstance(ep_info[key], torch.Tensor):
+                        ep_info[key] = torch.Tensor([ep_info[key]])
+                    if len(ep_info[key].shape) == 0:
+                        ep_info[key] = ep_info[key].unsqueeze(0)
                     infotensor = torch.cat((infotensor, ep_info[key].to(self.device)))
                 value = torch.mean(infotensor)
                 # log to logger and terminal

@@ -103,7 +103,7 @@ def _transform_policy_obs_left_right(env: BaseEnv, obs: torch.Tensor) -> torch.T
     return obs
 
 
-def _transform_critic_obs_left_right(env: BaseEnv, obs: torch.Tensor) -> torch.Tensor:
+def _transform_critic_obs_left_right(env: BaseEnv, all_obs: torch.Tensor) -> torch.Tensor:
     """Apply a left-right symmetry transformation to the observation tensor.
     Args:
         env: The environment instance from which the observation is obtained.
@@ -113,13 +113,14 @@ def _transform_critic_obs_left_right(env: BaseEnv, obs: torch.Tensor) -> torch.T
         The transformed observation tensor with left-right symmetry applied.
     """
     # copy observation tensor
-    obs = obs.clone()
+    all_obs = all_obs.clone()
+    obs = all_obs[:,:-187]
     device = obs.device
-    obs_dim = 274
+    obs_dim = 87
     assert obs.shape[1] % obs_dim == 0, \
         f"Obs dim {obs.shape[1]} is not divisible by {obs_dim}"
     num_frames = obs.shape[1] // obs_dim
-    # [N, T*77] -> [N, T, 77]
+    # [N, T*86] -> [N, T, 86]
     obs = obs.view(obs.shape[0], num_frames, obs_dim)
     # velocity command
     obs[..., 0:6] = obs[..., 0:6] * torch.tensor([1, -1, -1, 1, 1, 1], device=device)
@@ -139,7 +140,8 @@ def _transform_critic_obs_left_right(env: BaseEnv, obs: torch.Tensor) -> torch.T
     contact = obs[..., 84:86].clone()
     obs[..., 84:86] = contact[..., [1, 0]]
     obs = obs.view(obs.shape[0], num_frames * obs_dim)
-    return obs
+    all_obs[:,:-187] = obs.clone()
+    return all_obs
 
 
 

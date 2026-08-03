@@ -249,13 +249,13 @@ class AMPPPO:
             self.num_learning_epochs * self.num_mini_batches,
             self.storage.num_envs * self.storage.num_transitions_per_env // self.num_mini_batches,
         )
-        amp_expert_generator = self.amp_data.feed_forward_generator(
-            self.num_learning_epochs * self.num_mini_batches,
-            self.storage.num_envs * self.storage.num_transitions_per_env // self.num_mini_batches,
-        )
+        # amp_expert_generator = self.amp_data.feed_forward_generator(
+        #     self.num_learning_epochs * self.num_mini_batches,
+        #     self.storage.num_envs * self.storage.num_transitions_per_env // self.num_mini_batches,
+        # )
 
         # iterate over batches
-        for sample, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):
+        for sample, sample_amp_policy in zip(generator, amp_policy_generator):
             (
                 obs_batch,
                 critic_obs_batch,
@@ -276,7 +276,7 @@ class AMPPPO:
             num_aug = 1
             # original batch size
             original_batch_size = obs_batch.shape[0]
-
+            sample_amp_expert = self.amp_data.amp_expert_sample_by_cmd(obs_batch[:,:4])
             # check if we should normalize advantages per mini batch
             if self.normalize_advantage_per_mini_batch:
                 with torch.no_grad():

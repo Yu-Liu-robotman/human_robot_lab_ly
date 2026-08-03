@@ -23,12 +23,12 @@ class TlibotUniformVelocityCommand(UniformVelocityCommand):
             # update heading envs
             self.is_heading_env[env_ids] = r.uniform_(0.0, 1.0) <= self.cfg.rel_heading_envs
         
-        # 80%的x不超過1.5
+        # 50%的x不超過2.0
         select_walk = torch.rand(len(env_ids), device=self.device)
-        all_walk_idx = torch.where(select_walk > 0.2)[0]
+        all_walk_idx = torch.where(select_walk > 0.5)[0]
         self.vel_command_b[all_walk_idx, 0] =  self._rand_uniform(
             self.cfg.ranges.lin_vel_x[0],
-            1.5,
+            2.0,
             all_walk_idx.shape[0],
         )
 
@@ -122,8 +122,8 @@ class TlibotUniformVelocityCommand(UniformVelocityCommand):
             self.cfg.ranges.ang_vel_z[1],
             walk_turn_idx.shape[0] - half_num,
         )
-        # 向前跑 5% 左右各5%
-        rel_run_envs = 0.05
+        # 向前跑 20%
+        rel_run_envs = 0.20
         run_env = walk_turn_env + rel_run_envs
         run_idx = torch.where((select > walk_turn_env) & (select <= run_env))[0]
         vy[run_idx] = 0.0

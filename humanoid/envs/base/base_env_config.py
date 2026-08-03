@@ -74,8 +74,8 @@ class BaseEnvCfg:
         ),
     )
     robot: RobotCfg = RobotCfg(
-        actor_obs_history_length=1,
-        critic_obs_history_length=1,
+        actor_obs_history_length=10, # 1
+        critic_obs_history_length=10, # 1
         hist_obs_num = 5,
         action_scale=MISSING,
         terminate_contacts_body_names=MISSING,
