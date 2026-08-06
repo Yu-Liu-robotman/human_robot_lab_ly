@@ -365,7 +365,7 @@ class HumaRobotSimRos(Node):
                     break
                 # Obtain an observation
                 q, dq, quat, v, omega, gvec, lin_acc, torque_foot, lin_vel, force_foot, src_frc_foot, force_sensor = self.get_obs(data)
-                print("HEIGHT: ", q[2])
+                # print("HEIGHT: ", q[2])
                 q = q[-mj_joint_num:]
                 dq = dq[-mj_joint_num:]
                 a_q = q[dof_ids]

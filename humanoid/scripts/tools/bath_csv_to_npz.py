@@ -16,7 +16,7 @@ parser.add_argument("--input_dir", type=str, required=True)
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--recursive", action="store_true")
 parser.add_argument("--overwrite", action="store_true")
-parser.add_argument("--input_fps", type=int, default=60)
+parser.add_argument("--input_fps", type=int, default=30)
 parser.add_argument("--output_fps", type=int, default=50)
 
 AppLauncher.add_app_launcher_args(parser)

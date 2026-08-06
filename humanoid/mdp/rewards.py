@@ -129,14 +129,16 @@ def adaptive_flat_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = Scene
     asset: Articulation = env.scene[asset_cfg.name]
     gravity_xy = asset.data.projected_gravity_b[:, :2]
     vel_cmd = torch.norm(env.command_generator.command[:, :2], dim=1)
-    scale = torch.clamp(
-            (1.0 - vel_cmd) / 1.0,
-            min=0.1,
-            max=1.0,
-            )
-    max_scale = torch.where(env.walk_mask[:, 0], 0.6, 1.0)
-    scale = torch.clamp(scale, max=max_scale)
-    return torch.sum(torch.square(gravity_xy), dim=1) * scale
+    # scale = torch.clamp(
+    #         (1.0 - vel_cmd) / 1.0,
+    #         min=0.1,
+    #         max=1.0,
+    #         )
+    # max_scale = torch.where(env.walk_mask[:, 0], 0.6, 1.0)
+    # scale = torch.clamp(scale, max=max_scale)
+    reward = torch.sum(torch.square(gravity_xy), dim=1)
+    scale = env.stand_mask[:, 0].float() * 3.0
+    return reward * scale
 
 def is_terminated(env: BaseEnv) -> torch.Tensor:
     """Penalize terminated episodes that don't correspond to episodic timeouts."""
@@ -201,7 +203,9 @@ def body_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg
     body_orientation = math_utils.quat_apply_inverse(
         asset.data.body_quat_w[:, asset_cfg.body_ids[0], :], asset.data.GRAVITY_VEC_W
     )
-    return torch.sum(torch.square(body_orientation[:, :2]), dim=1)
+    reward = torch.sum(torch.square(body_orientation[:, :2]), dim=1)
+    scale = env.stand_mask[:, 0].float() * 3.0
+    return  reward * scale
 
 
 def feet_stumble(env: BaseEnv, sensor_cfg: SceneEntityCfg) -> torch.Tensor:

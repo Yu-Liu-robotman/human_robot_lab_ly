@@ -128,8 +128,8 @@ class BaseEnvCfg:
                 mode="startup",
                 params={
                     "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-                    "static_friction_range": (0.3, 1.0),
-                    "dynamic_friction_range": (0.3, 1.0),
+                    "static_friction_range": (0.2, 1.2),
+                    "dynamic_friction_range": (0.2, 1.2),
                     "restitution_range": (0.0, 0.0),
                     "num_buckets": 64,
                 },
@@ -148,7 +148,7 @@ class BaseEnvCfg:
                 mode="startup",
                 params={
                     "asset_cfg": SceneEntityCfg("robot", body_names=["base_link"]),
-                    "com_range": {"x": (-0.02, 0.02), "y": (-0.02, 0.02), "z": (-0.02, 0.02)},
+                    "com_range": {"x": (-0.03, 0.03), "y": (-0.03, 0.03), "z": (-0.03, 0.03)},
                 },
             ),
             scale_link_mass = EventTerm(
@@ -156,7 +156,7 @@ class BaseEnvCfg:
                 mode="startup",
                 params={
                     "asset_cfg": SceneEntityCfg("robot", body_names=[".*"]),
-                    "mass_distribution_params": (0.8, 1.2),
+                    "mass_distribution_params": (0.5, 1.5),
                     "operation": "scale",
                 },
             ),
@@ -165,8 +165,8 @@ class BaseEnvCfg:
                 mode="startup",
                 params={
                     "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-                    "stiffness_distribution_params": (0.8, 1.2),  # ±20% Kp
-                    "damping_distribution_params": (0.8, 1.2),    # ±20% Kd
+                    "stiffness_distribution_params": (0.7, 1.3),  # ±20% Kp
+                    "damping_distribution_params": (0.7, 1.3),    # ±20% Kd
                     "operation": "scale",
                     "distribution": "uniform",
                 },

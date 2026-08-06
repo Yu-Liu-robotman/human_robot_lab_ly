@@ -76,7 +76,7 @@ class AMPLoader:
     
     S_JOINT_POS_SIZE = 20
     S_JOINT_VEL_SIZE = 20
-    S_END_EFFECTOR_POS_SIZE = 162 # n*15
+    S_END_EFFECTOR_POS_SIZE = 30 # 30
     
     S_JOINT_POSE_START_IDX = 0
     S_JOINT_POSE_END_IDX = S_JOINT_POSE_START_IDX + S_JOINT_POS_SIZE
@@ -286,23 +286,19 @@ class AMPLoader:
             [0.8, 0.0, 0.0],   
             [1.0, 0.0, 0.0],   
 
-            [1.0, 0.0, 0.8],
-            [1.0, 0.0, -0.8],
+            [1.0, 0.0, 0.3],
+            [1.0, 0.0, -0.3],
+            [1.0, 0.0, 0.6],
+            [1.0, 0.0, -0.6],
 
             [-0.1, 0.0, 0.0],
             [-0.2, 0.0, 0.0],
             [-0.4, 0.0, 0.0],
-            # [-0.5, 0.0, 0.0],
 
             [0.0, 0.3, 0.0],
             [0.0, -0.3, 0.0],
             [0.0, 0.5, 0.0],
             [0.0, -0.5, 0.0],
-
-            [0.0, 0.0, 0.6],     
-            [0.0, 0.0, 1.0],     
-            [0.0, 0.0, -0.6],     
-            [0.0, 0.0, -1.0],
 
             [0.0, 0.0, 0.3],     
             [0.0, 0.0, -0.3],
@@ -310,10 +306,10 @@ class AMPLoader:
             [0.0, 0.0, 0.0], 
 
             [1.5, 0.0, 0.0], 
-            [1.5, 0.0, 1.0],
-            [1.5, 0.0, -1.0],
+            [1.5, 0.0, 0.5],
+            [1.5, 0.0, -0.5],
 
-            [0.0, 0.0, 0.0],     
+            # [0.0, 0.0, 0.0],     
         ]).to(self._motions_mean_cmd.device)
         # hard
         # self.motion_skill = torch.tensor([
@@ -333,14 +329,14 @@ class AMPLoader:
         # sample
         self.motion_skill = torch.tensor([
             0,0,0,0,   # forward
-            1,1,       # move
+            1,1, 1,1,      # move
             2,2,2,   # back
             3,3,3,3,    # side
-            4,4,4,4,4,4,    # turn
+            4,4,    # turn
             5,       # idle
             6,
             7,7,
-            8,       # tabu
+            # 8,       # tabu
         ])
         self.motion_cmds_abs = self._motions_mean_cmd.abs().max(dim=0)[0]
         self.motion_cmds_std = self._motions_mean_cmd.std(dim=0)
@@ -732,7 +728,7 @@ class AMPLoader:
         skill[(vx.abs() == 0) & (vy.abs() == 0 ) & (wz.abs() == 0) & (stand_flag == 1.0)] = 5
         skill[(vx > 1.5) & (vy.abs() == 0 ) & (wz.abs() == 0)] = 6
         skill[(vx > 1.5)  & (vy.abs() == 0) & (wz.abs() > 0)] = 7
-        skill[(vx.abs() == 0) & (vy.abs() == 0 ) & (wz.abs() == 0) & (stand_flag == -1.0)] = 8
+        # skill[(vx.abs() == 0) & (vy.abs() == 0 ) & (wz.abs() == 0) & (stand_flag == -1.0)] = 8
         # skill[(vx > 1.5) & (vy.abs() == 0 ) & (wz.abs() == 0)] = 6
         # skill[(vx > 1.5)  & (vy.abs() == 0) & (wz.abs() > 0)] = 7
         
@@ -756,13 +752,13 @@ class AMPLoader:
             [
                 dof_pos[idxs].reshape(n, -1),
                 dof_vel[idxs].reshape(n, -1),
-                root_ori[idxs].reshape(n, -1),
-                root_lin[idxs].reshape(n, -1),
-                root_ang[idxs].reshape(n, -1),
+                # root_ori[idxs].reshape(n, -1),
+                # root_lin[idxs].reshape(n, -1),
+                # root_ang[idxs].reshape(n, -1),
                 body_pos[idxs].reshape(n, -1),
-                body_ori[idxs].reshape(n, -1),
-                body_lin[idxs].reshape(n, -1),
-                body_ang[idxs].reshape(n, -1),
+                # body_ori[idxs].reshape(n, -1),
+                # body_lin[idxs].reshape(n, -1),
+                # body_ang[idxs].reshape(n, -1),
             ],
             dim=-1,
         )
@@ -770,13 +766,13 @@ class AMPLoader:
             [
                 dof_pos[next_idxs].reshape(n, -1),
                 dof_vel[next_idxs].reshape(n, -1),
-                root_ori[next_idxs].reshape(n, -1),
-                root_lin[next_idxs].reshape(n, -1),
-                root_ang[next_idxs].reshape(n, -1),
+                # root_ori[next_idxs].reshape(n, -1),
+                # root_lin[next_idxs].reshape(n, -1),
+                # root_ang[next_idxs].reshape(n, -1),
                 body_pos[next_idxs].reshape(n, -1),
-                body_ori[next_idxs].reshape(n, -1),
-                body_lin[next_idxs].reshape(n, -1),
-                body_ang[next_idxs].reshape(n, -1),
+                # body_ori[next_idxs].reshape(n, -1),
+                # body_lin[next_idxs].reshape(n, -1),
+                # body_ang[next_idxs].reshape(n, -1),
             ],
             dim=-1,
         )
