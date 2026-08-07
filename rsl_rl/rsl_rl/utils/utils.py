@@ -139,56 +139,205 @@ def string_to_callable(name: str) -> Callable:
             f" 'module:attribute_name'\nWhile processing input '{name}', received the error:\n {e}."
         )
         raise ValueError(msg)
+# class RunningMeanStd:
+#     def __init__(self, epsilon: float = 1e-4, shape: Tuple[int, ...] = ()):
+#         """
+#         Calculates the running mean and std of a data stream
+#         https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
+#         :param epsilon: helps with arithmetic issues
+#         :param shape: the shape of the data stream's output
+#         """
+#         self.mean = np.zeros(shape, np.float64)
+#         self.var = np.ones(shape, np.float64)
+#         self.count = epsilon
+
+#     def update(self, arr: np.ndarray) -> None:
+#         batch_mean = np.mean(arr, axis=0)
+#         batch_var = np.var(arr, axis=0)
+#         batch_count = arr.shape[0]
+#         self.update_from_moments(batch_mean, batch_var, batch_count)
+
+#     def update_from_moments(self, batch_mean: np.ndarray, batch_var: np.ndarray, batch_count: int) -> None:
+#         delta = batch_mean - self.mean
+#         tot_count = self.count + batch_count
+
+#         new_mean = self.mean + delta * batch_count / tot_count
+#         m_a = self.var * self.count
+#         m_b = batch_var * batch_count
+#         m_2 = m_a + m_b + np.square(delta) * self.count * batch_count / (self.count + batch_count)
+#         new_var = m_2 / (self.count + batch_count)
+
+#         new_count = batch_count + self.count
+
+#         self.mean = new_mean
+#         self.var = new_var
+#         self.count = new_count
+# class Normalizer(RunningMeanStd):
+#     def __init__(self, input_dim, epsilon=1e-4, clip_obs=10.0):
+#         super().__init__(shape=input_dim)
+#         self.epsilon = epsilon
+#         self.clip_obs = clip_obs
+
+#     def normalize(self, input):
+#         return np.clip((input - self.mean) / np.sqrt(self.var + self.epsilon), -self.clip_obs, self.clip_obs)
+
+#     def normalize_torch(self, input, device):
+#         mean_torch = torch.tensor(self.mean, device=device, dtype=torch.float32)
+#         std_torch = torch.sqrt(torch.tensor(self.var + self.epsilon, device=device, dtype=torch.float32))
+#         return torch.clamp((input - mean_torch) / std_torch, -self.clip_obs, self.clip_obs)
+
+#     def update_normalizer(self, rollouts, expert_loader):
+#         policy_data_generator = rollouts.feed_forward_generator_amp(None, mini_batch_size=expert_loader.batch_size)
+#         expert_data_generator = expert_loader.dataset.feed_forward_generator_amp(expert_loader.batch_size)
+
+#         for expert_batch, policy_batch in zip(expert_data_generator, policy_data_generator):
+#             self.update(torch.vstack(tuple(policy_batch) + tuple(expert_batch)).cpu().numpy())
+
 class RunningMeanStd:
-    def __init__(self, epsilon: float = 1e-4, shape: Tuple[int, ...] = ()):
-        """
-        Calculates the running mean and std of a data stream
-        https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
-        :param epsilon: helps with arithmetic issues
-        :param shape: the shape of the data stream's output
-        """
-        self.mean = np.zeros(shape, np.float64)
-        self.var = np.ones(shape, np.float64)
-        self.count = epsilon
 
-    def update(self, arr: np.ndarray) -> None:
-        batch_mean = np.mean(arr, axis=0)
-        batch_var = np.var(arr, axis=0)
+    def __init__(
+        self,
+        epsilon: float = 1e-4,
+        shape=(),
+        device: str = "cuda",
+    ):
+        self.device = device
+
+        self.mean = torch.zeros(
+            shape,
+            dtype=torch.float32,
+            device=device,
+        )
+
+        self.var = torch.ones(
+            shape,
+            dtype=torch.float32,
+            device=device,
+        )
+
+        self.count = float(epsilon)
+
+    @torch.no_grad()
+    def update(self, arr):
+
+        if isinstance(arr, np.ndarray):
+            arr = torch.from_numpy(arr).to(
+                self.device,
+                dtype=torch.float32,
+            )
+
+        batch_mean = arr.mean(dim=0)
+        batch_var = arr.var(dim=0, unbiased=False)
         batch_count = arr.shape[0]
-        self.update_from_moments(batch_mean, batch_var, batch_count)
 
-    def update_from_moments(self, batch_mean: np.ndarray, batch_var: np.ndarray, batch_count: int) -> None:
+        self.update_from_moments(
+            batch_mean,
+            batch_var,
+            batch_count,
+        )
+
+    @torch.no_grad()
+    def update_from_moments(
+        self,
+        batch_mean,
+        batch_var,
+        batch_count,
+    ):
         delta = batch_mean - self.mean
+
         tot_count = self.count + batch_count
 
-        new_mean = self.mean + delta * batch_count / tot_count
+        new_mean = (
+            self.mean
+            + delta * batch_count / tot_count
+        )
+
         m_a = self.var * self.count
         m_b = batch_var * batch_count
-        m_2 = m_a + m_b + np.square(delta) * self.count * batch_count / (self.count + batch_count)
-        new_var = m_2 / (self.count + batch_count)
 
-        new_count = batch_count + self.count
+        m_2 = (
+            m_a
+            + m_b
+            + delta.square()
+            * self.count
+            * batch_count
+            / tot_count
+        )
+
+        new_var = m_2 / tot_count
 
         self.mean = new_mean
         self.var = new_var
-        self.count = new_count
+        self.count = tot_count
+
 class Normalizer(RunningMeanStd):
-    def __init__(self, input_dim, epsilon=1e-4, clip_obs=10.0):
-        super().__init__(shape=input_dim)
+
+    def __init__(
+        self,
+        input_dim,
+        epsilon=1e-4,
+        clip_obs=10.0,
+        device="cuda",
+    ):
+        super().__init__(
+            shape=input_dim,
+            epsilon=epsilon,
+            device=device,
+        )
+
         self.epsilon = epsilon
         self.clip_obs = clip_obs
 
-    def normalize(self, input):
-        return np.clip((input - self.mean) / np.sqrt(self.var + self.epsilon), -self.clip_obs, self.clip_obs)
+    def normalize(self, x , device=None):
 
-    def normalize_torch(self, input, device):
-        mean_torch = torch.tensor(self.mean, device=device, dtype=torch.float32)
-        std_torch = torch.sqrt(torch.tensor(self.var + self.epsilon, device=device, dtype=torch.float32))
-        return torch.clamp((input - mean_torch) / std_torch, -self.clip_obs, self.clip_obs)
+        if isinstance(x, np.ndarray):
+            mean = self.mean.cpu().numpy()
+            var = self.var.cpu().numpy()
 
-    def update_normalizer(self, rollouts, expert_loader):
-        policy_data_generator = rollouts.feed_forward_generator_amp(None, mini_batch_size=expert_loader.batch_size)
-        expert_data_generator = expert_loader.dataset.feed_forward_generator_amp(expert_loader.batch_size)
+            return np.clip(
+                (x - mean)
+                / np.sqrt(var + self.epsilon),
+                -self.clip_obs,
+                self.clip_obs,
+            )
 
-        for expert_batch, policy_batch in zip(expert_data_generator, policy_data_generator):
-            self.update(torch.vstack(tuple(policy_batch) + tuple(expert_batch)).cpu().numpy())
+        return self.normalize_torch(x)
+
+    def normalize_torch(self, x, device=None):
+
+        return torch.clamp(
+            (x - self.mean)
+            / torch.sqrt(self.var + self.epsilon),
+            -self.clip_obs,
+            self.clip_obs,
+        )
+
+    @torch.no_grad()
+    def update_normalizer(
+        self,
+        rollouts,
+        expert_loader,
+        device=None
+    ):
+        policy_data_generator = rollouts.feed_forward_generator_amp(
+            None,
+            mini_batch_size=expert_loader.batch_size,
+        )
+
+        expert_data_generator = (
+            expert_loader.dataset.feed_forward_generator_amp(
+                expert_loader.batch_size
+            )
+        )
+
+        for expert_batch, policy_batch in zip(
+            expert_data_generator,
+            policy_data_generator,
+        ):
+
+            x = torch.vstack(
+                tuple(policy_batch)
+                + tuple(expert_batch)
+            )
+
+            self.update(x)

@@ -223,8 +223,52 @@ def feet_too_near_humanoid(
     assert len(asset_cfg.body_ids) == 2
     asset: Articulation = env.scene[asset_cfg.name]
     feet_pos = asset.data.body_pos_w[:, asset_cfg.body_ids, :]
-    distance = torch.norm(feet_pos[:, 0] - feet_pos[:, 1], dim=-1) # 脚的3d距离
-    return (threshold - distance).clamp(min=0)                     # 脚的3d距离大于阈值，则奖励为0，否则为阈值减去脚的3d距离惩罚
+    distance = torch.abs(feet_pos[:, 0, 1] - feet_pos[:, 1, 1])
+    return ( (threshold - distance).clamp(min=0) ) / threshold
+
+
+def feet_yaw_alignment(
+    env: BaseEnv,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    lin_vel_y_eps: float = 0.05,
+    ang_vel_z_eps: float = 0.05,
+    contact_force_threshold: float = 5.0,
+) -> torch.Tensor:
+    """Penalize feet yaw (toe-in/out) deviation from the base heading.
+
+    Only active during near-pure forward-walking commands (|vy| and |wz| close
+    to 0), gated smoothly to avoid discontinuities when the command includes
+    turning/side-stepping. Only counts the error while a foot is in stance,
+    since swing-phase feet naturally rotate during stepping.
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+
+    base_yaw_quat = math_utils.yaw_quat(asset.data.root_quat_w)  # (N, 4)
+    foot_quat = asset.data.body_quat_w[:, asset_cfg.body_ids, :]  # (N, num_feet, 4)
+    num_feet = foot_quat.shape[1]
+    foot_yaw_quat = math_utils.yaw_quat(foot_quat.reshape(-1, 4)).reshape(-1, num_feet, 4)
+
+    base_yaw_conj = math_utils.quat_conjugate(base_yaw_quat).unsqueeze(1).expand(-1, num_feet, -1)
+    rel_quat = math_utils.quat_mul(base_yaw_conj, foot_yaw_quat).reshape(-1, 4)
+    _, _, rel_yaw = math_utils.euler_xyz_from_quat(rel_quat)
+    rel_yaw = math_utils.wrap_to_pi(rel_yaw).reshape(-1, num_feet)  # (N, num_feet)
+
+    # only penalize while the foot is on the ground
+    in_contact = (
+        contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2] > contact_force_threshold
+    ).float()
+    yaw_err = rel_yaw * in_contact
+    reward = torch.sum(torch.square(yaw_err), dim=1)
+
+    # smooth gate: only active for near-pure vx commands (no turning/side-stepping)
+    command = env.command_generator.command
+    straight_scale = torch.exp(-((command[:, 1] / lin_vel_y_eps) ** 2)) * torch.exp(
+        -((command[:, 2] / ang_vel_z_eps) ** 2)
+    )
+    return reward * straight_scale * env.walk_mask[:, 0].float()
+
 
 # Regularization Reward
 def ankle_torque(env: BaseEnv) -> torch.Tensor:

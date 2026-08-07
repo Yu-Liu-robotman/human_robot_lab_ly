@@ -117,7 +117,18 @@ class T2proRewardCfg(RewardCfg):
     feet_too_near = RewTerm(
         func=mdp.feet_too_near_humanoid,
         weight=-4.0,
-        params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*ankle_roll.*"]), "threshold": 0.17},
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*ankle_roll.*"]), "threshold": 0.16},
+    )
+    feet_yaw_alignment = RewTerm(
+        func=mdp.feet_yaw_alignment,
+        weight=-3.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+            "lin_vel_y_eps": 0.05,
+            "ang_vel_z_eps": 0.05,
+            "contact_force_threshold": 5.0,
+        },
     )
     # 优化摆臂
     joint_deviation_arms = RewTerm(
@@ -139,11 +150,16 @@ class T2proRewardCfg(RewardCfg):
             )
         },
     )
-    # feet_stumble = RewTerm(
-    #     func=mdp.feet_stumble,
-    #     weight=-10.0,
-    #     params={"sensor_cfg": SceneEntityCfg("contact_sensor", body_names=[".*ankle_roll.*"])},
-    # )
+    joint_deviation_torso = RewTerm(
+            func=mdp.joint_deviation_l1,
+            weight=-1.0,
+            params={
+                "asset_cfg": SceneEntityCfg(
+                    "robot", joint_names=["torso_pitch_joint"]
+                )
+            },
+        )
+    
     ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
     # ankle_action = RewTerm(func=mdp.ankle_action, weight=-0.001)
     stand_still_joint_deviation_l1 = RewTerm(
@@ -218,14 +234,7 @@ class T2proRewardCfg(RewardCfg):
             "force_threshold": 5.0,
         },
     )
-    # joint_deviation_knee = RewTerm(
-    #     func=mdp.single_support_joint_deviation_l1,
-    #     weight=-1.0,
-    #     params={
-    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-    #         "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_knee.*"])
-    #     },
-    # )
+
 @configclass
 class T2proFlatEnvCfg(BaseEnvCfg):
     kds = KDS

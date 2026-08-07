@@ -457,8 +457,8 @@ class AMPPPO:
                 self.rnd_optimizer.step()
 
             if self.amp_normalizer is not None:
-                self.amp_normalizer.update(policy_state.cpu().numpy())
-                self.amp_normalizer.update(expert_state.cpu().numpy())
+                self.amp_normalizer.update(policy_state)
+                self.amp_normalizer.update(expert_state)
 
             # Store the losses
             mean_value_loss += value_loss.item()
