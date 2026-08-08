@@ -32,15 +32,15 @@ class AMPLoader:
     # "body_ang_vel_w",
     # "joint_pos_mujoco",
     # "joint_vel_mujoco"
-    BODY_SIZE = 21
-    JOINT_POS_SIZE = 20
-    JOINT_VEL_SIZE = 20
+    BODY_SIZE = 24
+    JOINT_POS_SIZE = 23
+    JOINT_VEL_SIZE = 23
     BODY_POS_SIZE = BODY_SIZE * 3
     BODY_QUAT_SIZE = BODY_SIZE * 4
     BODY_LIN_VEL_SIZE = BODY_SIZE * 3
     BODY_ANG_VEL_SIZE = BODY_SIZE * 3
-    JOINT_POS_MUJOCO_SIZE = 20
-    JOINT_VEL_MUJOCO_SIZE = 20
+    JOINT_POS_MUJOCO_SIZE = 23
+    JOINT_VEL_MUJOCO_SIZE = 23
     JOINT_POSE_START_IDX = 0
     JOINT_POSE_END_IDX = JOINT_POSE_START_IDX + JOINT_POS_SIZE
     JOINT_VEL_START_IDX = JOINT_POSE_END_IDX
@@ -70,12 +70,13 @@ class AMPLoader:
     joint_mujoco_select = [
         0, 1, 2, 3, 4, 5, 
         6, 7, 8, 9, 10, 11,
-        12, 13, 14, 15, 
-        16, 17, 18, 19,
+        12, 13, 14, 
+        15, 16, 17, 18, 
+        19, 20, 21, 22,
     ]
     
-    S_JOINT_POS_SIZE = 20
-    S_JOINT_VEL_SIZE = 20
+    S_JOINT_POS_SIZE = 23
+    S_JOINT_VEL_SIZE = 23
     S_END_EFFECTOR_POS_SIZE = 30 # 30
     
     S_JOINT_POSE_START_IDX = 0
@@ -104,7 +105,7 @@ class AMPLoader:
         self.time_between_frames = time_between_frames
         all_names_list = list(all_body_names)
         self.body_select = [all_names_list.index(n) for n in body_names]
-        self.body_select = [3, 4, 15, 16, 19, 20, 9, 10, 13, 14]
+        # self.body_select = [3, 4, 15, 16, 19, 20, 9, 10, 13, 14]
         print(self.body_select)
         self.anchor_idx = all_names_list.index(anchor_name)
         # Values to store for each trajectory.

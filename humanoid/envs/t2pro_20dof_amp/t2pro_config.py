@@ -150,12 +150,20 @@ class T2proRewardCfg(RewardCfg):
             )
         },
     )
-    joint_deviation_torso = RewTerm(
+    joint_deviation_global = RewTerm(
             func=mdp.joint_deviation_l1,
             weight=-1.0,
             params={
                 "asset_cfg": SceneEntityCfg(
-                    "robot", joint_names=["torso_pitch_joint"]
+                    "robot", joint_names=[
+                        "torso_pitch_joint",
+                        "torso_roll_joint",
+                        "torso_yaw_joint",
+                        # ".*_hip_roll.*", 
+                        # ".*_hip_yaw.*",
+                        # ".*_shoulder_roll.*",
+                        # ".*_shoulder_yaw.*",
+                        ]
                 )
             },
         )
@@ -364,34 +372,34 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     amp_reward_coef = 0.5
     amp_motion_files = [
                             # 前进--换前三
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/seeds/walk_ff_loop_180_R_very_slow_001__A443.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/seeds/walk_ff_loop_180_R_slow_001__A443.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/seeds/walk_ff_loop_180_R_normal_pace_001__A443.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/41-0511_forward04_0_150.txt", #保留
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/11-0511_forward01_150_300.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/21-0511_forward02_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/31-0511_forward03_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/41-0511_forward04_0_150.txt",#保留
                             # 走转--全换
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/seeds/walk_arc_cw_loop_R_normal_pace_002__A443_M.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/seeds/walk_arc_cw_loop_R_normal_pace_002__A443.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/seeds/walk_arc_cw_loop_R_fast_001__A448_M.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/seeds/walk_arc_cw_loop_R_fast_001__A448.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_normal_pace_002__A443_M.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_normal_pace_002__A443.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_fast_001__A448_M.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_fast_001__A448.txt",
                             # 后退
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/161-0511_back01_50_200.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/171-0511_back02_50_200.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/181-0511_back03_50_200.txt", #动作很大
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/161-0511_back01_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/171-0511_back02_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/181-0511_back03_50_200.txt", #动作很大
                             # 横移
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/201-0511_side_left01_0_150.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/211-0511_side_right_01_0_150.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/221-0511_side_left02_0_150.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/232-0511_side_right_02_0_150.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/201-0511_side_left01_0_150.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/211-0511_side_right_01_0_150.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/221-0511_side_left02_0_150.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/232-0511_side_right_02_0_150.txt",
                             # 原地转向
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/111-0511_turn_left01_50_200.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/121-0511_turn_right01_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/111-0511_turn_left01_50_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/121-0511_turn_right01_50_200.txt",
                             # 站立
-                            "humanoid/envs/t2pro_20dof_amp/datasets/txt/stand11-0511_0_200.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/stand11-0511_0_200.txt",
                             # 跑步
-                            "humanoid/envs/t2pro_20dof_amp/datasets/run/txt/jog_ff_loop_180_R_fast_002__A454.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/jog_ff_loop_180_R_fast_002__A454.txt",
                             #跑转
-                            "humanoid/envs/t2pro_20dof_amp/datasets/run/txt/jog_arc_cw_loop_R_fast_001__A454_M.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/run/txt/jog_arc_cw_loop_R_fast_001__A454.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/jog_arc_cw_loop_R_fast_001__A454_M.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/jog_arc_cw_loop_R_fast_001__A454.txt",
                             # 踏步
                             # "humanoid/envs/t2pro_20dof_amp/datasets/txt/t2pro_tb_50_250.txt"
                             ]
@@ -513,7 +521,7 @@ class T2proAmpDWAQFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     amp_num_preload_transitions = 200000
     amp_task_reward_lerp = 0.5
     amp_discr_hidden_dims = [1024, 512, 256]
-    min_normalized_std = [0.05] * 20
+    min_normalized_std = [0.05] * 23
     amp_body_names=KEY_POS_LIST
     amp_anchor_name=ANCHOR_NAME
 
