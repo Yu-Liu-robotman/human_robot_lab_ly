@@ -227,6 +227,48 @@ def feet_too_near_humanoid(
     return ( (threshold - distance).clamp(min=0) ) / threshold
 
 
+def knee_distance_exp(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    target_dist: float = 0.2,
+    std: float = 0.05,
+    clip_error: float = 0.03,
+) -> torch.Tensor:
+    """Reward the knees' lateral (y-axis) distance staying close to a target value.
+
+    The closer the y-axis distance between the two knees is to `target_dist`,
+    the higher the (positive) reward, using an exponential kernel. If the
+    absolute error exceeds `clip_error`, the reward is clipped to zero.
+    """
+    assert len(asset_cfg.body_ids) == 2
+    asset: Articulation = env.scene[asset_cfg.name]
+    knee_pos = asset.data.body_pos_w[:, asset_cfg.body_ids, :]
+    distance = torch.abs(knee_pos[:, 0, 1] - knee_pos[:, 1, 1])
+    abs_error = torch.abs(distance - target_dist)
+    reward = torch.exp(-torch.square(abs_error) / std**2)
+    reward = torch.where(abs_error > clip_error, torch.zeros_like(reward), reward)
+    return reward
+def feet_yaw_l2(
+    env: BaseEnv ,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    num_envs = env.num_envs
+    num_feet = len(asset_cfg.body_ids)
+    root_quat = asset.data.root_quat_w
+    foot_quat = asset.data.body_quat_w[:, asset_cfg.body_ids]
+    root_quat = root_quat.unsqueeze(1).expand(-1, num_feet, -1).reshape(-1, 4)
+    foot_quat = foot_quat.reshape(-1, 4)
+    rel_quat = math_utils.quat_mul(
+        math_utils.quat_conjugate(root_quat),
+        foot_quat,
+    )
+    _, _, yaw = math_utils.euler_xyz_from_quat(rel_quat)
+    yaw = yaw.reshape(num_envs, num_feet)
+    yaw = torch.atan2(torch.sin(yaw), torch.cos(yaw))
+    return torch.mean(yaw * yaw, dim=1)
+
+
 def feet_yaw_alignment(
     env: BaseEnv,
     sensor_cfg: SceneEntityCfg,

@@ -119,16 +119,15 @@ class T2proRewardCfg(RewardCfg):
         weight=-4.0,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*ankle_roll.*"]), "threshold": 0.16},
     )
-    feet_yaw_alignment = RewTerm(
-        func=mdp.feet_yaw_alignment,
-        weight=-3.0,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-            "lin_vel_y_eps": 0.05,
-            "ang_vel_z_eps": 0.05,
-            "contact_force_threshold": 5.0,
-        },
+    knee_distance = RewTerm(
+        func=mdp.knee_distance_exp,
+        weight=1.0,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*knee.*"]), 
+                "target_dist": 0.2, "std": 0.05, "clip_error": 0.03},
+    )
+    ankle_orientation_l2 = RewTerm(
+        func=mdp.feet_yaw_l2, params={"asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll.*")}, 
+        weight=-5.0
     )
     # 优化摆臂
     joint_deviation_arms = RewTerm(
@@ -159,10 +158,6 @@ class T2proRewardCfg(RewardCfg):
                         "torso_pitch_joint",
                         "torso_roll_joint",
                         "torso_yaw_joint",
-                        # ".*_hip_roll.*", 
-                        # ".*_hip_yaw.*",
-                        # ".*_shoulder_roll.*",
-                        # ".*_shoulder_yaw.*",
                         ]
                 )
             },
@@ -396,10 +391,13 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                             # 站立
                             "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/stand11-0511_0_200.txt",
                             # 跑步
-                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/jog_ff_loop_180_R_fast_002__A454.txt",
+                            # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/jog_ff_loop_180_R_fast_002__A454.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/lafan/run2_subject1_1850_1949.txt",
                             #跑转
-                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/jog_arc_cw_loop_R_fast_001__A454_M.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/jog_arc_cw_loop_R_fast_001__A454.txt",
+                            # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/jog_arc_cw_loop_R_fast_001__A454_M.txt",
+                            # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/jog_arc_cw_loop_R_fast_001__A454.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/lafan/run2_subject1_2030_2130.txt",
+                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/lafan/run2_subject1_2353_2430.txt",
                             # 踏步
                             # "humanoid/envs/t2pro_20dof_amp/datasets/txt/t2pro_tb_50_250.txt"
                             ]
