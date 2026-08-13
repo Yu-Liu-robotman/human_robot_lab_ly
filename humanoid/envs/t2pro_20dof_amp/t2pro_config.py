@@ -3,7 +3,7 @@ from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
 
 import humanoid.mdp as mdp
-from humanoid.assets.t2pro import T2PRO, T2PRO_ACTION_SCALE, KDS, KPS
+from humanoid.assets.t2pro.t2pro import T2PRO, T2PRO_ACTION_SCALE, KDS, KPS
 from humanoid.envs.base.base_env_config import (  # noqa:F401
     BaseAgentCfg,
     BaseEnvCfg,
@@ -116,9 +116,10 @@ class T2proRewardCfg(RewardCfg):
     )
     feet_too_near = RewTerm(
         func=mdp.feet_too_near_humanoid,
-        weight=-4.0,
+        weight=-2.0,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*ankle_roll.*"]), "threshold": 0.16},
     )
+    feet_y_distance = RewTerm(func=mdp.feet_y_distance, weight=-2.0)
     knee_distance = RewTerm(
         func=mdp.knee_distance_exp,
         weight=1.0,

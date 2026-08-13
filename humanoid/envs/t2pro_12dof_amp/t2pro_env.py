@@ -14,7 +14,7 @@ from isaaclab.utils.buffers import CircularBuffer, DelayBuffer
 from isaaclab.utils.math import quat_apply, quat_conjugate, quat_rotate
 from scipy.spatial.transform import Rotation
 
-from humanoid.envs.t2pro_20dof_amp.t2pro_config import T2proFlatEnvCfg, T2proAmpFlatEnvCfg
+from humanoid.envs.t2pro_12dof_amp.t2pro_config import T2proFlatEnvCfg, T2proAmpFlatEnvCfg
 from humanoid.utils.env_utils.scene import SceneCfg
 from humanoid.envs.base.base_env import BaseEnv
 from humanoid.mdp.command import TlibotUniformVelocityCommand
@@ -239,24 +239,6 @@ class T2proEnv(BaseEnv):
                 "leg_right_knee_joint",
                 "leg_right_ankle_pitch_joint",
                 "leg_right_ankle_roll_joint",
-            ],
-            preserve_order=True,
-        )
-        self.left_arm_ids, _ = self.robot.find_joints(
-            name_keys=[
-                "arm_left_shoulder_pitch_joint",
-                "arm_left_shoulder_roll_joint",
-                "arm_left_shoulder_yaw_joint",
-                "arm_left_elbow_joint",
-            ],
-            preserve_order=True,
-        )
-        self.right_arm_ids, _ = self.robot.find_joints(
-            name_keys=[
-                "arm_right_shoulder_pitch_joint",
-                "arm_right_shoulder_roll_joint",
-                "arm_right_shoulder_yaw_joint",
-                "arm_right_elbow_joint",
             ],
             preserve_order=True,
         )
@@ -847,13 +829,13 @@ class T2proEnv(BaseEnv):
             (
                 joint_pos,
                 joint_vel,
-                root_ori,
-                root_lin_vel_b,
-                root_ang_vel_b,
+                # root_ori,
+                # root_lin_vel_b,
+                # root_ang_vel_b,
                 tgt_robot_body_pos_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
-                tgt_robot_body_ori_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
-                tgt_body_lin_vel_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
-                tgt_body_ang_vel_b.reshape(tgt_robot_body_pos_b.shape[0], -1),  
+                # tgt_robot_body_ori_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
+                # tgt_body_lin_vel_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
+                # tgt_body_ang_vel_b.reshape(tgt_robot_body_pos_b.shape[0], -1),  
             ),
             dim=-1,
         )

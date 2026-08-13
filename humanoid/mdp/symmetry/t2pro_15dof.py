@@ -78,37 +78,96 @@ def _transform_policy_obs_left_right(env: "BaseEnv", obs: torch.Tensor) -> torch
 def _transform_critic_obs_left_right(env: "BaseEnv", obs: torch.Tensor) -> torch.Tensor:
     """Left-right symmetry for 15-DOF critic observation.
 
-    Critic obs layout (obs_dim = 250):
-        [0:57]   actor obs (same as policy)
-        [57:60]  base lin vel
-        [60:62]  feet contact mask
-        [62:63]  root height
-        [63:250] height scan (187 points)
+    The critic observation layout produced by ``T2proEnv.compute_observations`` is:
+      - a per-frame block of size ``frame_dim`` (policy_obs(57) + lin_vel(3) + contact_mask(num_feet)
+        [+ feet_pos(3*num_feet) + feet_vel(3*num_feet) if privileged_info.enable_feet_info]
+        [+ feet_force(3*num_feet) if privileged_info.enable_feet_contact_force]
+        [+ base_height(1) if privileged_info.enable_root_height]), repeated
+        ``robot.critic_obs_history_length`` times, followed by
+      - a height-scan tail (only present if ``scene.height_scanner.enable_height_scan``), which is
+        appended once (not part of the per-frame history).
+
+    Both ``frame_dim``/history length and the height-scan grid size are derived from ``env.cfg``
+    so this stays correct if the privileged-info toggles, history length, or height-scanner
+    size/resolution change.
     """
     obs = obs.clone()
     device = obs.device
-    obs_dim = 250
-    assert obs.shape[1] % obs_dim == 0, f"Obs dim {obs.shape[1]} is not divisible by {obs_dim}"
-    num_frames = obs.shape[1] // obs_dim
-    obs = obs.view(obs.shape[0], num_frames, obs_dim)
+
+    priv = env.cfg.scene.privileged_info
+    num_feet = len(env.feet_cfg.body_ids)
+    assert num_feet == 2, f"Left-right mirroring assumes a biped (2 feet), got {num_feet}."
+
+    # -- per-frame layout (see T2proEnv.compute_current_observations)
+    frame_dim = 57 + 3 + num_feet  # policy_obs + lin_vel + contact_mask
+    if priv.enable_feet_info:
+        frame_dim += 3 * num_feet * 2  # feet_pos + feet_vel
+    if priv.enable_feet_contact_force:
+        frame_dim += 3 * num_feet  # feet_force
+    if priv.enable_root_height:
+        frame_dim += 1  # base_height
+
+    history_length = env.cfg.robot.critic_obs_history_length
+    hist_dim = frame_dim * history_length
+
+    assert obs.shape[1] >= hist_dim, (
+        f"Critic obs dim {obs.shape[1]} is smaller than the expected observation-history "
+        f"block of {hist_dim} (frame_dim={frame_dim} x history_length={history_length})."
+    )
+
+    hist_obs = obs[..., :hist_dim].view(obs.shape[0], history_length, frame_dim)
 
     # --- actor obs portion ---
-    obs[..., 0:6] = obs[..., 0:6] * torch.tensor([1, -1, -1, 1, 1, 1], device=device)
-    obs[..., 6:21] = _switch_joints_left_right(obs[..., 6:21])
-    obs[..., 21:36] = _switch_joints_left_right(obs[..., 21:36])
-    obs[..., 36:51] = _switch_joints_left_right(obs[..., 36:51])
-    obs[..., 51:54] = obs[..., 51:54] * torch.tensor([-1, 1, -1], device=device)
-    obs[..., 54:57] = obs[..., 54:57] * torch.tensor([1, -1, 1], device=device)
-    # --- critic extra ---
-    # lin vel: negate y
-    obs[..., 57:60] = obs[..., 57:60] * torch.tensor([1, -1, 1], device=device)
-    # contact mask: swap left/right feet
-    contact = obs[..., 60:62].clone()
-    obs[..., 60:62] = contact[..., [1, 0]]
-    # root height: unchanged [62:63]
-    # height scan: unchanged [63:250]
+    hist_obs[..., 0:6] = hist_obs[..., 0:6] * torch.tensor([1, -1, -1, 1, 1, 1], device=device)
+    hist_obs[..., 6:21] = _switch_joints_left_right(hist_obs[..., 6:21])
+    hist_obs[..., 21:36] = _switch_joints_left_right(hist_obs[..., 21:36])
+    hist_obs[..., 36:51] = _switch_joints_left_right(hist_obs[..., 36:51])
+    hist_obs[..., 51:54] = hist_obs[..., 51:54] * torch.tensor([-1, 1, -1], device=device)
+    hist_obs[..., 54:57] = hist_obs[..., 54:57] * torch.tensor([1, -1, 1], device=device)
 
-    obs = obs.view(obs.shape[0], num_frames * obs_dim)
+    offset = 57
+    # lin vel: negate y
+    hist_obs[..., offset : offset + 3] = hist_obs[..., offset : offset + 3] * torch.tensor(
+        [1, -1, 1], device=device
+    )
+    offset += 3
+    # contact mask (left, right) -> swap
+    contact = hist_obs[..., offset : offset + num_feet].clone()
+    hist_obs[..., offset : offset + num_feet] = contact[..., [1, 0]]
+    offset += num_feet
+    # feet pos / vel: [Lx,Ly,Lz,Rx,Ry,Rz] -> mirror + swap left/right
+    if priv.enable_feet_info:
+        hist_obs[..., offset : offset + 6] = _mirror_lr_vec6(hist_obs[..., offset : offset + 6], device)
+        offset += 6
+        hist_obs[..., offset : offset + 6] = _mirror_lr_vec6(hist_obs[..., offset : offset + 6], device)
+        offset += 6
+    # feet force: [Lx,Ly,Lz,Rx,Ry,Rz] -> mirror + swap left/right
+    if priv.enable_feet_contact_force:
+        hist_obs[..., offset : offset + 6] = _mirror_lr_vec6(hist_obs[..., offset : offset + 6], device)
+        offset += 6
+    # base_height: scalar, unaffected by left-right mirroring
+    if priv.enable_root_height:
+        offset += 1
+    assert offset == frame_dim
+
+    obs[..., :hist_dim] = hist_obs.reshape(obs.shape[0], hist_dim)
+
+    # height scan tail (appended once, not part of the per-frame history) — mirror the
+    # sampled grid across its lateral (y) axis. The grid is flattened in "xy" order
+    # (see isaaclab GridPatternCfg/grid_pattern): y (lateral) is the slow-varying axis,
+    # x (forward) is the fast-varying axis, so mirroring left-right reverses the y-rows.
+    if obs.shape[1] > hist_dim:
+        hs_cfg = env.cfg.scene.height_scanner
+        nx = int(round(hs_cfg.size[0] / hs_cfg.resolution)) + 1
+        ny = int(round(hs_cfg.size[1] / hs_cfg.resolution)) + 1
+        height_scan = obs[..., hist_dim:]
+        assert height_scan.shape[1] == nx * ny, (
+            f"Height scan dim {height_scan.shape[1]} does not match the expected "
+            f"{nx}x{ny}={nx * ny} grid computed from height_scanner size/resolution."
+        )
+        height_scan = height_scan.view(obs.shape[0], ny, nx).flip(dims=[1])
+        obs[..., hist_dim:] = height_scan.reshape(obs.shape[0], nx * ny)
+
     return obs
 
 

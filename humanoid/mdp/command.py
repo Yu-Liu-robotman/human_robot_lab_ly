@@ -122,39 +122,39 @@ class TlibotUniformVelocityCommand(UniformVelocityCommand):
             self.cfg.ranges.ang_vel_z[1],
             walk_turn_idx.shape[0] - half_num,
         )
-        # 向前跑 15%
-        rel_run_envs = 0.15
-        run_env = walk_turn_env + rel_run_envs
-        run_idx = torch.where((select > walk_turn_env) & (select <= run_env))[0]
-        vy[run_idx] = 0.0
-        wz[run_idx] = 0.0
-        vx[run_idx] = self._rand_uniform(
-            1.5,
-            self.cfg.ranges.lin_vel_x[1],
-            run_idx.shape[0],
-        )
+        # # 向前跑 15%
+        # rel_run_envs = 0.15
+        # run_env = walk_turn_env + rel_run_envs
+        # run_idx = torch.where((select > walk_turn_env) & (select <= run_env))[0]
+        # vy[run_idx] = 0.0
+        # wz[run_idx] = 0.0
+        # vx[run_idx] = self._rand_uniform(
+        #     1.5,
+        #     self.cfg.ranges.lin_vel_x[1],
+        #     run_idx.shape[0],
+        # )
 
-        # 跑轉 10% 左右各5% 
-        rel_run_turn_envs = 0.1
-        run_turn_env = run_env + rel_run_turn_envs
-        run_turn_idx = torch.where((select > run_env) & (select <= run_turn_env))[0]
-        half_num = int((run_turn_idx.shape[0]/2))
-        vy[run_turn_idx] = 0.0 
-        vx[run_turn_idx] = self._rand_uniform(
-            1.5,
-            self.cfg.ranges.lin_vel_x[1],
-            run_turn_idx.shape[0],
-        )
-        wz[run_turn_idx[:half_num]] = self._rand_uniform(
-            self.cfg.ranges.ang_vel_z[0],
-            -0.01,
-            half_num,
-        )
-        wz[run_turn_idx[half_num:]] = self._rand_uniform(
-            0.01,
-            self.cfg.ranges.ang_vel_z[1],
-            run_turn_idx.shape[0] - half_num,
-        )
+        # # 跑轉 10% 左右各5% 
+        # rel_run_turn_envs = 0.1
+        # run_turn_env = run_env + rel_run_turn_envs
+        # run_turn_idx = torch.where((select > run_env) & (select <= run_turn_env))[0]
+        # half_num = int((run_turn_idx.shape[0]/2))
+        # vy[run_turn_idx] = 0.0 
+        # vx[run_turn_idx] = self._rand_uniform(
+        #     1.5,
+        #     self.cfg.ranges.lin_vel_x[1],
+        #     run_turn_idx.shape[0],
+        # )
+        # wz[run_turn_idx[:half_num]] = self._rand_uniform(
+        #     self.cfg.ranges.ang_vel_z[0],
+        #     -0.01,
+        #     half_num,
+        # )
+        # wz[run_turn_idx[half_num:]] = self._rand_uniform(
+        #     0.01,
+        #     self.cfg.ranges.ang_vel_z[1],
+        #     run_turn_idx.shape[0] - half_num,
+        # )
        
         self.vel_command_b[env_ids, 0] = vx.clone()
         self.vel_command_b[env_ids, 1] = vy.clone()

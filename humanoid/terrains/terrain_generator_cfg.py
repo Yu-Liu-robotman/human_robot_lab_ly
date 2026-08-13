@@ -41,91 +41,71 @@ SLOPE_TERRAINS_CFG = TerrainGeneratorCfg(
     slope_threshold=0.75,
     use_cache=False,
     sub_terrains={
-        "up_slope1": terrain_gen.HfPyramidSlopedTerrainCfg(
-            proportion=0.1,
-            slope_range=(0.0, 0.577), # 30 0.577
-            platform_width=2.0,
-            inverted=False
+        "flat": terrain_gen.HfRandomUniformTerrainCfg(
+            proportion=0.40,  # 25% 近似平地
+            noise_range=(0.0, 0.02),  # 几乎无噪声
+            noise_step=0.01,
+            border_width=0.25,
         ),
-        "up_slope2": terrain_gen.HfPyramidSlopedTerrainCfg(
-            proportion=0.1,
-            slope_range=(0.0, 0.577), # 30 0.577
-            platform_width=2.0,
-            inverted=True
+        "smooth_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
+            proportion=0.20, slope_range=(0.0, 0.3), platform_width=2.0, inverted=False
         ),
-
-        "down_slope1": terrain_gen.HfPyramidSlopedTerrainCfg(
-            proportion=0.1,
-            slope_range=(0, -0.577), # 20 0.364
-            platform_width=2.0,
-            inverted=False
+        "rough_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
+            proportion=0.20, slope_range=(0.0, 0.3), platform_width=2.0, inverted=True
         ),
-        "down_slope2": terrain_gen.HfPyramidSlopedTerrainCfg(
-            proportion=0.1,
-            slope_range=(0, -0.577), # 20 0.364
-            platform_width=2.0,
-            inverted=True
+        "discrete": terrain_gen.MeshRandomGridTerrainCfg(
+            proportion=0.20, grid_width=0.45, grid_height_range=(0.0, 0.1), platform_width=2.0
         ),
-
-        # "flat": terrain_gen.HfRandomUniformTerrainCfg(
-        #     proportion=0.1, 
-        #     noise_range=(0.0, 0.02),
-        #     noise_step=0.01,
-        #     border_width=0.25,
+        # # ========== 上台阶 - 20% (降低难度) ==========
+        # "stairs_up_26": terrain_gen.MeshPyramidStairsTerrainCfg(
+        #     proportion=0.07,
+        #     step_height_range=(0.0, 0.22),
+        #     step_width=0.26,
+        #     platform_width=3.0,
+        #     border_width=1.0,
+        #     holes=False,
         # ),
-        "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-            proportion=0.2, noise_range=(0, 0.05), noise_step=0.02, border_width=0.25
-        ),
-        # ========== 上台阶 - 20% (降低难度) ==========
-        "stairs_up_26": terrain_gen.MeshPyramidStairsTerrainCfg(
-            proportion=0.07,
-            step_height_range=(0.0, 0.22),
-            step_width=0.26,
-            platform_width=3.0,
-            border_width=1.0,
-            holes=False,
-        ),
-        "stairs_up_30": terrain_gen.MeshPyramidStairsTerrainCfg(
-            proportion=0.07,
-            step_height_range=(0.0, 0.22),
-            step_width=0.30,
-            platform_width=3.0,
-            border_width=1.0,
-            holes=False,
-        ),
-        "stairs_up_34": terrain_gen.MeshPyramidStairsTerrainCfg(
-            proportion=0.06,
-            step_height_range=(0.0, 0.22),
-            step_width=0.34,
-            platform_width=3.0,
-            border_width=1.0,
-            holes=False,
-        ),
-        # ========== 下台阶 - 20% (降低难度) ==========
-        "stairs_down_26": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-            proportion=0.07,
-            step_height_range=(0.0, 0.22),
-            step_width=0.26,
-            platform_width=3.0,
-            border_width=1.0,
-            holes=False,
-        ),
-        "stairs_down_30": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-            proportion=0.07,
-            step_height_range=(0.0, 0.22),
-            step_width=0.30,
-            platform_width=3.0,
-            border_width=1.0,
-            holes=False,
-        ),
-        "stairs_down_34": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-            proportion=0.06,
-            step_height_range=(0.0, 0.22),
-            step_width=0.34,
-            platform_width=3.0,
-            border_width=1.0,
-            holes=False,
-        ),
+        # "stairs_up_30": terrain_gen.MeshPyramidStairsTerrainCfg(
+        #     proportion=0.07,
+        #     step_height_range=(0.0, 0.22),
+        #     step_width=0.30,
+        #     platform_width=3.0,
+        #     border_width=1.0,
+        #     holes=False,
+        # ),
+        # "stairs_up_34": terrain_gen.MeshPyramidStairsTerrainCfg(
+        #     proportion=0.06,
+        #     step_height_range=(0.0, 0.22),
+        #     step_width=0.34,
+        #     platform_width=3.0,
+        #     border_width=1.0,
+        #     holes=False,
+        # ),
+        # # ========== 下台阶 - 20% (降低难度) ==========
+        # "stairs_down_26": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+        #     proportion=0.07,
+        #     step_height_range=(0.0, 0.22),
+        #     step_width=0.26,
+        #     platform_width=3.0,
+        #     border_width=1.0,
+        #     holes=False,
+        # ),
+        # "stairs_down_30": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+        #     proportion=0.07,
+        #     step_height_range=(0.0, 0.22),
+        #     step_width=0.30,
+        #     platform_width=3.0,
+        #     border_width=1.0,
+        #     holes=False,
+        # ),
+        # "stairs_down_34": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+        #     proportion=0.06,
+        #     step_height_range=(0.0, 0.22),
+        #     step_width=0.34,
+        #     platform_width=3.0,
+        #     border_width=1.0,
+        #     holes=False,
+        # ),
     },
 )
 
