@@ -352,10 +352,12 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                         "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/31-0511_forward03_50_200.txt",
                         "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/41-0511_forward04_0_150.txt",#保留
                         # 走转--全换
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_normal_pace_002__A443_M.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_normal_pace_002__A443.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_fast_001__A448_M.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_fast_001__A448.txt",
+                        # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_normal_pace_002__A443_M.txt",
+                        # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_normal_pace_002__A443.txt",
+                        # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_fast_001__A448_M.txt",
+                        # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_fast_001__A448.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/141-0511_move_left01_50_200.txt",
+                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/151-0511_move_right01_50_200.txt",
                         # 后退
                         "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/161-0511_back01_50_200.txt",
                         "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/171-0511_back02_50_200.txt",

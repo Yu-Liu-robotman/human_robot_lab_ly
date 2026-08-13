@@ -70,14 +70,14 @@ class AMPLoader:
     joint_mujoco_select = [
         0, 1, 2, 3, 4, 5, 
         6, 7, 8, 9, 10, 11,
-        # 12, 13, 14, 
-        # 15, 16, 17, 18, 
-        # 19, 20, 21, 22,
+        12, 13, 14, 
+        15, 16, 17, 18, 
+        19, 20, 21, 22,
     ]
     
-    S_JOINT_POS_SIZE = 12
-    S_JOINT_VEL_SIZE = 12
-    S_END_EFFECTOR_POS_SIZE = 18 # 30
+    S_JOINT_POS_SIZE = 23
+    S_JOINT_VEL_SIZE = 23
+    S_END_EFFECTOR_POS_SIZE = 30 # 30
     
     S_JOINT_POSE_START_IDX = 0
     S_JOINT_POSE_END_IDX = S_JOINT_POSE_START_IDX + S_JOINT_POS_SIZE
@@ -289,8 +289,8 @@ class AMPLoader:
 
             [1.0, 0.0, 0.3],
             [1.0, 0.0, -0.3],
-            [1.0, 0.0, 0.6],
-            [1.0, 0.0, -0.6],
+            # [1.0, 0.0, 0.6],
+            # [1.0, 0.0, -0.6],
 
             [-0.1, 0.0, 0.0],
             [-0.2, 0.0, 0.0],
@@ -306,9 +306,9 @@ class AMPLoader:
 
             [0.0, 0.0, 0.0], 
 
-            # [1.5, 0.0, 0.0], 
-            # [1.5, 0.0, 0.5],
-            # [1.5, 0.0, -0.5],
+            [1.5, 0.0, 0.0], 
+            [1.5, 0.0, 0.5],
+            [1.5, 0.0, -0.5],
 
             # [0.0, 0.0, 0.0],     
         ]).to(self._motions_mean_cmd.device)
@@ -330,13 +330,13 @@ class AMPLoader:
         # sample
         self.motion_skill = torch.tensor([
             0,0,0,0,   # forward
-            1,1, 1,1,      # move
+            1,1,# 1,1,      # move
             2,2,2,   # back
             3,3,3,3,    # side
             4,4,    # turn
             5,       # idle
-            # 6,
-            # 7,7,
+            6,
+            7,7,
             # 8,       # tabu
         ])
         self.motion_cmds_abs = self._motions_mean_cmd.abs().max(dim=0)[0]
@@ -727,8 +727,8 @@ class AMPLoader:
         skill[(vx.abs() == 0) & (vy.abs() > 0) & (wz.abs() == 0) ] = 3
         skill[(vx.abs() == 0) & (vy.abs() == 0) & (wz.abs() > 0)] = 4
         skill[(vx.abs() == 0) & (vy.abs() == 0 ) & (wz.abs() == 0) & (stand_flag == 1.0)] = 5
-        # skill[(vx > 1.5) & (vy.abs() == 0 ) & (wz.abs() == 0)] = 6
-        # skill[(vx > 1.5)  & (vy.abs() == 0) & (wz.abs() > 0)] = 7
+        skill[(vx > 1.5) & (vy.abs() == 0 ) & (wz.abs() == 0)] = 6
+        skill[(vx > 1.5)  & (vy.abs() == 0) & (wz.abs() > 0)] = 7
         # skill[(vx.abs() == 0) & (vy.abs() == 0 ) & (wz.abs() == 0) & (stand_flag == -1.0)] = 8
         # skill[(vx > 1.5) & (vy.abs() == 0 ) & (wz.abs() == 0)] = 6
         # skill[(vx > 1.5)  & (vy.abs() == 0) & (wz.abs() > 0)] = 7
