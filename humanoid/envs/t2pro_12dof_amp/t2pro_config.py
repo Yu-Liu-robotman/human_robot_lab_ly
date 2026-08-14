@@ -49,27 +49,28 @@ class TlibotCustomCfg:
 class T2proRewardCfg(RewardCfg):
     track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=3.0, params={"std": 0.25})
     track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=3.0, params={"std": 0.25})
-    feet_air_time = RewTerm(
-        func=mdp.adaptive_feet_air_time_positive_biped,
-        weight=1.5,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "low_speed_threshold": 0.4,
-            "high_speed_threshold": 0.6,
-            "stand_cmd": True,
-        },
-    )
+    applied_torque_limits = RewTerm(func=mdp.applied_torque_limits, weight=-0.01)
+    # feet_air_time = RewTerm(
+    #     func=mdp.adaptive_feet_air_time_positive_biped,
+    #     weight=1.5,
+    #     params={
+    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+    #         "low_speed_threshold": 0.4,
+    #         "high_speed_threshold": 0.6,
+    #         "stand_cmd": True,
+    #     },
+    # )
 
-    feet_swing_height = RewTerm(
-        func=mdp.feet_swing_height,
-        weight=0.5,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-            "target_height": 0.10,
-            "sigma": 0.02
-        },
-    )
+    # feet_swing_height = RewTerm(
+    #     func=mdp.feet_swing_height,
+    #     weight=0.5,
+    #     params={
+    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+    #         "target_height": 0.10,
+    #         "sigma": 0.02
+    #     },
+    # )
 
     alive = RewTerm(func=mdp.dwaq_alive, weight=0.15) 
     # # 奖励直膝行走
@@ -93,11 +94,11 @@ class T2proRewardCfg(RewardCfg):
     )
     flat_orientation_l2 = RewTerm(func=mdp.adaptive_flat_orientation_l2, weight=-1.0)
     body_orientation_l2 = RewTerm(func=mdp.body_orientation_l2, weight=-5.0, params={"asset_cfg": SceneEntityCfg("robot", body_names="torso_roll.*"),})
-    termination_penalty = RewTerm(func=mdp.is_terminated, weight=-200.0)
+    # termination_penalty = RewTerm(func=mdp.is_terminated, weight=-200.0)
 
     feet_slide = RewTerm(
         func=mdp.atom_feet_slide,
-        weight=-0.1,
+        weight=-0.5,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
@@ -105,7 +106,7 @@ class T2proRewardCfg(RewardCfg):
     )
     feet_force = RewTerm(
         func=mdp.mjlab_soft_landing,
-        weight=-1e-3,
+        weight=-5e-3,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
             "threshold": 500,
@@ -119,7 +120,7 @@ class T2proRewardCfg(RewardCfg):
         weight=-2.0,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*ankle_roll.*"]), "threshold": 0.17},
     )
-    feet_y_distance = RewTerm(func=mdp.feet_y_distance, weight=-2.0)
+    feet_y_distance = RewTerm(func=mdp.feet_y_distance, weight=-5.0)
     knee_distance = RewTerm(
             func=mdp.knee_distance_exp,
             weight=1.0,

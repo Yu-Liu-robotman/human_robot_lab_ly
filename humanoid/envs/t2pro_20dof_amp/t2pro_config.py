@@ -49,6 +49,7 @@ class TlibotCustomCfg:
 class T2proRewardCfg(RewardCfg):
     track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=4.0, params={"std": 0.25}) # 3.0
     track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=4.0, params={"std": 0.25})   # 3.0
+    applied_torque_limits = RewTerm(func=mdp.applied_torque_limits, weight=-0.1)
     feet_air_time = RewTerm(
         func=mdp.adaptive_feet_air_time_positive_biped,
         weight=1.5,  # 1.0
@@ -97,7 +98,7 @@ class T2proRewardCfg(RewardCfg):
 
     feet_slide = RewTerm(
         func=mdp.atom_feet_slide,
-        weight=-0.1,
+        weight=-0.5,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
@@ -105,7 +106,7 @@ class T2proRewardCfg(RewardCfg):
     )
     feet_force = RewTerm(
         func=mdp.mjlab_soft_landing,
-        weight=-1e-3,
+        weight=-5e-3,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
             "threshold": 500,
@@ -119,7 +120,7 @@ class T2proRewardCfg(RewardCfg):
         weight=-2.0,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*ankle_roll.*"]), "threshold": 0.16},
     )
-    feet_y_distance = RewTerm(func=mdp.feet_y_distance, weight=-2.0)
+    feet_y_distance = RewTerm(func=mdp.feet_y_distance, weight=-5.0)
     knee_distance = RewTerm(
         func=mdp.knee_distance_exp,
         weight=1.0,
@@ -133,7 +134,7 @@ class T2proRewardCfg(RewardCfg):
     # 优化摆臂
     joint_deviation_arms = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.15,
+        weight=-5.0,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*"]
@@ -257,7 +258,7 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         self.robot.terminate_contacts_body_names = ["base_link", "torso_roll_link"]
         self.robot.feet_body_names = [".*ankle_roll.*"]
         self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = ["base_link"]
-        self.commands.ranges.lin_vel_x = (-0.6, 2.5)
+        self.commands.ranges.lin_vel_x = (-0.6, 1.5)
         self.commands.ranges.lin_vel_y = (-0.6, 0.6)
         self.commands.ranges.ang_vel_z = (-0.6, 0.6)
         self.commands.rel_standing_envs = 0.2
@@ -395,17 +396,17 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                             "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/stand11-0511_0_200.txt",
                             # 跑步
                             # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/jog_ff_loop_180_R_fast_002__A454.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/lafan/run2_subject1_1850_1949.txt",
+                            # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/lafan/run2_subject1_1850_1949.txt",
                             # #跑转
                             # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/jog_arc_cw_loop_R_fast_001__A454_M.txt",
                             # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/jog_arc_cw_loop_R_fast_001__A454.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/lafan/run2_subject1_2030_2130.txt",
-                            "humanoid/envs/t2pro_20dof_amp/datasets/23dof/lafan/run2_subject1_2353_2430.txt",
+                            # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/lafan/run2_subject1_2030_2130.txt",
+                            # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/lafan/run2_subject1_2353_2430.txt",
                             # 踏步
                             # "humanoid/envs/t2pro_20dof_amp/datasets/txt/t2pro_tb_50_250.txt"
                             ]
     amp_num_preload_transitions = 200000
-    amp_task_reward_lerp = 0.7
+    amp_task_reward_lerp = 0.5
     amp_discr_hidden_dims = [1024, 512, 256]
     min_normalized_std = [0.05] * 23
     amp_body_names=KEY_POS_LIST

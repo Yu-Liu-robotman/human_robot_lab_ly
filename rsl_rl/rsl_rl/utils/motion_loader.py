@@ -306,9 +306,9 @@ class AMPLoader:
 
             [0.0, 0.0, 0.0], 
 
-            [1.5, 0.0, 0.0], 
-            [1.5, 0.0, 0.5],
-            [1.5, 0.0, -0.5],
+            # [1.5, 0.0, 0.0], 
+            # [1.5, 0.0, 0.5],
+            # [1.5, 0.0, -0.5],
 
             # [0.0, 0.0, 0.0],     
         ]).to(self._motions_mean_cmd.device)
@@ -335,8 +335,8 @@ class AMPLoader:
             3,3,3,3,    # side
             4,4,    # turn
             5,       # idle
-            6,
-            7,7,
+            # 6,
+            # 7,7,
             # 8,       # tabu
         ])
         self.motion_cmds_abs = self._motions_mean_cmd.abs().max(dim=0)[0]
@@ -727,8 +727,8 @@ class AMPLoader:
         skill[(vx.abs() == 0) & (vy.abs() > 0) & (wz.abs() == 0) ] = 3
         skill[(vx.abs() == 0) & (vy.abs() == 0) & (wz.abs() > 0)] = 4
         skill[(vx.abs() == 0) & (vy.abs() == 0 ) & (wz.abs() == 0) & (stand_flag == 1.0)] = 5
-        skill[(vx > 1.5) & (vy.abs() == 0 ) & (wz.abs() == 0)] = 6
-        skill[(vx > 1.5)  & (vy.abs() == 0) & (wz.abs() > 0)] = 7
+        # skill[(vx > 1.5) & (vy.abs() == 0 ) & (wz.abs() == 0)] = 6
+        # skill[(vx > 1.5)  & (vy.abs() == 0) & (wz.abs() > 0)] = 7
         # skill[(vx.abs() == 0) & (vy.abs() == 0 ) & (wz.abs() == 0) & (stand_flag == -1.0)] = 8
         # skill[(vx > 1.5) & (vy.abs() == 0 ) & (wz.abs() == 0)] = 6
         # skill[(vx > 1.5)  & (vy.abs() == 0) & (wz.abs() > 0)] = 7
