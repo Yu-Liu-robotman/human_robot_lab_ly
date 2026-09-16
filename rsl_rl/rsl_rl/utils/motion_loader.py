@@ -35,12 +35,17 @@ class AMPLoader:
     BODY_SIZE = 24
     JOINT_POS_SIZE = 23
     JOINT_VEL_SIZE = 23
+    # BODY_SIZE = 21
+    # JOINT_POS_SIZE = 20
+    # JOINT_VEL_SIZE = 20
     BODY_POS_SIZE = BODY_SIZE * 3
     BODY_QUAT_SIZE = BODY_SIZE * 4
     BODY_LIN_VEL_SIZE = BODY_SIZE * 3
     BODY_ANG_VEL_SIZE = BODY_SIZE * 3
     JOINT_POS_MUJOCO_SIZE = 23
     JOINT_VEL_MUJOCO_SIZE = 23
+    # JOINT_POS_MUJOCO_SIZE = 20
+    # JOINT_VEL_MUJOCO_SIZE = 20
     JOINT_POSE_START_IDX = 0
     JOINT_POSE_END_IDX = JOINT_POSE_START_IDX + JOINT_POS_SIZE
     JOINT_VEL_START_IDX = JOINT_POSE_END_IDX
@@ -60,12 +65,13 @@ class AMPLoader:
     # joint_mujoco_select = [
     #     0, 1, 2, 3, 4, 5, 
     #     6, 7, 8, 9, 10, 11,
-    #     # 12, 13, 14, 15, 
-    #     # 16, 17, 18, 19,
+    #     12, 13, 14, 15, 
+    #     16, 17, 18, 19,
     # ]
     
-    # S_JOINT_POS_SIZE = 12
-    # S_JOINT_VEL_SIZE = 12
+    # S_JOINT_POS_SIZE = 20
+    # S_JOINT_VEL_SIZE = 20
+    # S_END_EFFECTOR_POS_SIZE = 30 # 30
     # S_END_EFFECTOR_POS_SIZE = 102 # n*15
     joint_mujoco_select = [
         0, 1, 2, 3, 4, 5, 
@@ -104,8 +110,8 @@ class AMPLoader:
         self.device = device
         self.time_between_frames = time_between_frames
         all_names_list = list(all_body_names)
-        self.body_select = [all_names_list.index(n) for n in body_names]
-        # self.body_select = [3, 4, 15, 16, 19, 20, 9, 10, 13, 14]
+        self.body_select = [all_names_list.index(n) for n in body_names]    #使用23dof必须取消注释
+        # self.body_select = [3, 4, 15, 16, 19, 20, 9, 10, 13, 14]    
         print(self.body_select)
         self.anchor_idx = all_names_list.index(anchor_name)
         # Values to store for each trajectory.
@@ -282,35 +288,28 @@ class AMPLoader:
         torch.set_printoptions(precision=4, sci_mode=False)
         print(self._motions_mean_cmd)
         self._motions_mean_cmd = torch.tensor([
-            [0.4, 0.0, 0.0], 
             [0.6, 0.0, 0.0], 
-            [0.8, 0.0, 0.0],   
-            [1.0, 0.0, 0.0],   
+            # [0.6, 0.0, 0.0], 
+            # [0.8, 0.0, 0.0],   
+            # [1.0, 0.0, 0.0],   
 
             [1.0, 0.0, 0.3],
             [1.0, 0.0, -0.3],
-            # [1.0, 0.0, 0.6],
-            # [1.0, 0.0, -0.6],
 
-            [-0.1, 0.0, 0.0],
+            # [-0.1, 0.0, 0.0],
             [-0.2, 0.0, 0.0],
-            [-0.4, 0.0, 0.0],
+            # [-0.4, 0.0, 0.0],
 
             [0.0, 0.3, 0.0],
             [0.0, -0.3, 0.0],
-            [0.0, 0.5, 0.0],
-            [0.0, -0.5, 0.0],
+            # [0.0, 0.5, 0.0],
+            # [0.0, -0.5, 0.0],
 
             [0.0, 0.0, 0.3],     
             [0.0, 0.0, -0.3],
 
             [0.0, 0.0, 0.0], 
-
-            # [1.5, 0.0, 0.0], 
-            # [1.5, 0.0, 0.5],
-            # [1.5, 0.0, -0.5],
-
-            # [0.0, 0.0, 0.0],     
+  
         ]).to(self._motions_mean_cmd.device)
         # hard
         # self.motion_skill = torch.tensor([
@@ -329,15 +328,12 @@ class AMPLoader:
         # ])
         # sample
         self.motion_skill = torch.tensor([
-            0,0,0,0,   # forward
+            0,#0,0,0,   # forward
             1,1,# 1,1,      # move
-            2,2,2,   # back
-            3,3,3,3,    # side
+            2,#2,2,   # back
+            3,3,#3,3,    # side
             4,4,    # turn
             5,       # idle
-            # 6,
-            # 7,7,
-            # 8,       # tabu
         ])
         self.motion_cmds_abs = self._motions_mean_cmd.abs().max(dim=0)[0]
         self.motion_cmds_std = self._motions_mean_cmd.std(dim=0)
@@ -706,20 +702,6 @@ class AMPLoader:
         wz = cmd[:, 2]
         stand_flag = cmd[:, 3]
         skill = torch.full((cmd.shape[0],), -1, device=cmd.device, dtype=torch.long,)
-        # hard
-        # skill[(vx <= 1.5) & (vx > 0.1) & (vy.abs() < 0.1) & (wz.abs() < 0.1)] = 0 # forward
-        # skill[(vx <= 1.5) & (vx > 0.1) & (vy.abs() < 0.1) & (wz <= -0.02)] = 1 # move_r
-        # skill[(vx <= 1.5) & (vx > 0.1) & (vy.abs() < 0.1) & (wz >= 0.02)] = 2 # move_l 
-        # skill[(vx <= -0.1) & (vy.abs() < 0.1) & (wz.abs() < 0.1)] = 3 # back
-        # skill[(vx.abs() < 0.1) & (vy >= 0.1) & (wz.abs() < 0.1)] = 4 # side_l
-        # skill[(vx.abs() < 0.1) & (vy <= -0.1) & (wz.abs() < 0.1)] = 5 # side_r
-        # skill[(vx.abs() < 0.1) & (vy.abs() < 0.1) & (wz >= 0.02)] = 6 # turn_l
-        # skill[(vx.abs() < 0.1) & (vy.abs() < 0.1) & (wz <= -0.02)] = 7 # turn_r
-        # skill[(vx.abs() < 0.1) & (vy.abs() < 0.1) & (wz.abs() < 0.02)] = 8 # idle
-        # skill[(vx > 1.5) & (vy.abs() < 0.1) & (wz.abs() < 0.1)] = 9 # run
-        # skill[(vx > 1.5) & (vy.abs() < 0.1) & (wz >= 0.02)] = 10 # run_r
-        # skill[(vx > 1.5) & (vy.abs() < 0.1) & (wz <= -0.02)] = 11 # run_l
-
         
         skill[(vx <= 1.5) & (vx > 0) & (vy.abs() == 0) & (wz.abs() == 0)] = 0 # forward
         skill[(vx <= 1.5) & (vx > 0) & (vy.abs() == 0) & (wz.abs() > 0)] = 1

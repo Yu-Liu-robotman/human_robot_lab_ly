@@ -54,7 +54,7 @@ def get_euler_xyz_tensor(quat):
     euler_xyz[euler_xyz > np.pi] -= 2 * np.pi
     return euler_xyz
 
-class T2proEnv(BaseEnv):
+class T2proEnv12DOF(BaseEnv):
     def __init__(
         self,
         cfg: (
