@@ -368,26 +368,48 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     # amp parameter
     amp_reward_coef = 0.5
     amp_motion_files = [
+                            # # 前进
+                            # "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_forward_segment_0000-0343.txt",
+
+                            # # 走转
+                            # "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_forward_left_segment_4707-4929.txt",
+                            # "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_forward_right_segment_4474-4696.txt",
+
+                            # # 后退
+                            # "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_back_segment_0351-0743.txt",
+
+                            # # 横移
+                            # "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_side_left_segment_2475-2747.txt",
+                            # "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_side_right_segment_1727-1999.txt",
+
+                            # # 原地转向
+                            # "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_turn_left_segment_3649-3922.txt",
+                            # "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_turn_right_segment_3176-3449.txt",
+
+                            # # 站立
+                            # "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_stand_segment_5589-5748.txt",
                             # 前进
-                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_forward_segment_0000-0343.txt",
-
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/11-0511_forward01_150_300.txt",
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/21-0511_forward02_50_200.txt",
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/31-0511_forward03_50_200.txt",
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/41-0511_forward04_0_150.txt",
                             # 走转
-                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_forward_left_segment_4707-4929.txt",
-                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_forward_right_segment_4474-4696.txt",
-
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/141-0511_move_left01_50_200.txt",
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/151-0511_move_right01_50_200.txt",
                             # 后退
-                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_back_segment_0351-0743.txt",
-
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/161-0511_back01_50_200.txt",
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/171-0511_back02_50_200.txt",
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/181-0511_back03_50_200.txt",
                             # 横移
-                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_side_left_segment_2475-2747.txt",
-                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_side_right_segment_1727-1999.txt",
-
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/201-0511_side_left01_0_150.txt",
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/211-0511_side_right_01_0_150.txt",
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/221-0511_side_left02_0_150.txt",
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/232-0511_side_right_02_0_150.txt",
                             # 原地转向
-                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_turn_left_segment_3649-3922.txt",
-                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_turn_right_segment_3176-3449.txt",
-
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/111-0511_turn_left01_50_200.txt",
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/121-0511_turn_right01_50_200.txt",
                             # 站立
-                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/23dof_stand_segment_5589-5748.txt",
+                            "humanoid/envs/t2pro_23dof_amp/datasets/23dof/xkd/stand11-0511_0_200.txt",
                             ]
     amp_num_preload_transitions = 200000
     amp_task_reward_lerp = 0.5
