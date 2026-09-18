@@ -62,28 +62,27 @@ class AMPLoader:
     JOINT_POS_END_MUJOCO_IDX = JOINT_POS_START_MUJOCO_IDX+ JOINT_POS_MUJOCO_SIZE
     JOINT_VEL_START_MUJOCO_IDX = JOINT_POS_END_MUJOCO_IDX
     JOINT_VEL_END_MUJOCO_IDX= JOINT_VEL_START_MUJOCO_IDX + JOINT_VEL_MUJOCO_SIZE
-    # joint_mujoco_select = [
-    #     0, 1, 2, 3, 4, 5, 
-    #     6, 7, 8, 9, 10, 11,
-    #     12, 13, 14, 15, 
-    #     16, 17, 18, 19,
-    # ]
-    
-    # S_JOINT_POS_SIZE = 20
-    # S_JOINT_VEL_SIZE = 20
-    # S_END_EFFECTOR_POS_SIZE = 30 # 30
-    # S_END_EFFECTOR_POS_SIZE = 102 # n*15
     joint_mujoco_select = [
         0, 1, 2, 3, 4, 5, 
         6, 7, 8, 9, 10, 11,
-        12, 13, 14, 
-        15, 16, 17, 18, 
-        19, 20, 21, 22,
+        # 12, 13, 14, 15, 
+        # 16, 17, 18, 19,
     ]
     
-    S_JOINT_POS_SIZE = 23
-    S_JOINT_VEL_SIZE = 23
-    S_END_EFFECTOR_POS_SIZE = 30 # 30
+    S_JOINT_POS_SIZE = 12
+    S_JOINT_VEL_SIZE = 12
+    S_END_EFFECTOR_POS_SIZE = 18 # 30
+    # joint_mujoco_select = [
+    #     0, 1, 2, 3, 4, 5, 
+    #     6, 7, 8, 9, 10, 11,
+    #     12, 13, 14, 
+    #     15, 16, 17, 18, 
+    #     19, 20, 21, 22,
+    # ]
+    
+    # S_JOINT_POS_SIZE = 23
+    # S_JOINT_VEL_SIZE = 23
+    # S_END_EFFECTOR_POS_SIZE = 30 # 30
     
     S_JOINT_POSE_START_IDX = 0
     S_JOINT_POSE_END_IDX = S_JOINT_POSE_START_IDX + S_JOINT_POS_SIZE

@@ -244,7 +244,7 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         self.commands.rel_standing_envs = 0.3
         self.commands.ranges.resampling_time_range = (4.0, 10.0)
         self.commands.heading_command = False
-        self.experiment_name = "t2pro_12dof_flat"
+        self.experiment_name = "z1_12dof_flat"
         self.rl_version = 2.1
         self.rand_dof_nums = 11
         # Privileged information for Critic
@@ -264,8 +264,8 @@ class T2proFlatAgentCfg(BaseAgentCfg):
             mirror_loss_coeff=0.1, 
             data_augmentation_func=t2pro_12dof.compute_symmetric_states
         )
-        self.experiment_name = "t2pro_12dof_flat"
-        self.wandb_project = "t2pro_12dof_flat"
+        self.experiment_name = "z1_12dof_flat"
+        self.wandb_project = "z1_12dof_flat"
 
 @configclass
 class T2proRoughEnvCfg(T2proFlatEnvCfg):
@@ -279,12 +279,12 @@ class T2proRoughEnvCfg(T2proFlatEnvCfg):
         self.reward.track_lin_vel_xy_exp.weight = 1.5
         self.reward.track_ang_vel_z_exp.weight = 1.5
         # self.reward.lin_vel_z_l2.weight = -0.25
-        self.experiment_name = "t2pro_12dof_rough"
+        self.experiment_name = "z1_12dof_rough"
         
 @configclass
 class T2proRoughAgentCfg(BaseAgentCfg):
-    experiment_name: str = "t2pro_12dof_rough"
-    wandb_project: str = "t2pro_12dof_rough"
+    experiment_name: str = "z1_12dof_rough"
+    wandb_project: str = "z1_12dof_rough"
 
     def __post_init__(self):
         super().__post_init__()
@@ -298,7 +298,7 @@ class T2proRoughAgentCfg(BaseAgentCfg):
 class T2proAmpFlatEnvCfg(T2proFlatEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.experiment_name = "t2pro_12dof_amp_flat"
+        self.experiment_name = "z1_12dof_amp_flat"
 @configclass
 class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     seed = 42
@@ -335,11 +335,11 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     clip_actions = None
     save_interval = 1000
     runner_class_name = "AmpOnPolicyRunner"
-    experiment_name = "t2pro_12dof_amp_flat"
+    experiment_name = "z1_12dof_amp_flat"
     run_name = ""
     logger = "tensorboard"
-    neptune_project = "t2pro_12dof_amp_flat"
-    wandb_project = "t2pro_12dof_amp_flat"
+    neptune_project = "z1_12dof_amp_flat"
+    wandb_project = "z1_12dof_amp_flat"
     resume = False
     load_run = ".*"
     load_checkpoint = "model_.*.pt"
@@ -347,32 +347,26 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     # amp parameter
     amp_reward_coef = 0.5
     amp_motion_files = [
-                        # 前进--换前三
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/11-0511_forward01_150_300.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/21-0511_forward02_50_200.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/31-0511_forward03_50_200.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/41-0511_forward04_0_150.txt",#保留
-                        # 走转--全换
-                        # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_normal_pace_002__A443_M.txt",
-                        # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_normal_pace_002__A443.txt",
-                        # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_fast_001__A448_M.txt",
-                        # "humanoid/envs/t2pro_20dof_amp/datasets/23dof/seed/walk_arc_cw_loop_R_fast_001__A448.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/141-0511_move_left01_50_200.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/151-0511_move_right01_50_200.txt",
+                        # 前进
+                        "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/hands/23dof_forward_segment_0000-0343.txt",
+
+                        # 走转
+                        "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/hands/23dof_forward_left_segment_4707-4929.txt",
+                        "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/hands/23dof_forward_right_segment_4474-4696.txt",
+
                         # 后退
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/161-0511_back01_50_200.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/171-0511_back02_50_200.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/181-0511_back03_50_200.txt", #动作很大
+                        "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/hands/23dof_back_segment_0351-0743.txt",
+
                         # 横移
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/201-0511_side_left01_0_150.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/211-0511_side_right_01_0_150.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/221-0511_side_left02_0_150.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/232-0511_side_right_02_0_150.txt",
+                        "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/hands/23dof_side_left_segment_2475-2747.txt",
+                        "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/hands/23dof_side_right_segment_1727-1999.txt",
+
                         # 原地转向
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/111-0511_turn_left01_50_200.txt",
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/121-0511_turn_right01_50_200.txt",
+                        "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/hands/23dof_turn_left_segment_3649-3922.txt",
+                        "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/hands/23dof_turn_right_segment_3176-3449.txt",
+
                         # 站立
-                        "humanoid/envs/t2pro_20dof_amp/datasets/23dof/xkd/stand11-0511_0_200.txt",
+                        "humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/hands/23dof_stand_segment_5589-5748.txt",
                         ]
     amp_num_preload_transitions = 200000
     amp_task_reward_lerp = 0.5
@@ -384,13 +378,13 @@ class T2proAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
 class T2proAmpFlatSymEnvCfg(T2proFlatEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.experiment_name = "t2pro_12dof_amp_sym_flat"
+        self.experiment_name = "z1_12dof_amp_sym_flat"
         self.amp_motion_files_display = ["/home/ubuntu/data/dateset/male_locomotion_gmr/往返走/Take_067_Skeleton1.txt"]
 class T2proAmpFlatSymAgentCfg(T2proAmpFlatAgentCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.experiment_name = "t2pro_12dof_amp_sym_flat"
-        self.wandb_project = "t2pro_12dof_amp_sym_flat"
+        self.experiment_name = "z1_12dof_amp_sym_flat"
+        self.wandb_project = "z1_12dof_amp_sym_flat"
         self.algorithm.symmetry_cfg = RslRlSymmetryCfg(
             use_data_augmentation=True,
             use_mirror_loss=True,
@@ -401,7 +395,7 @@ class T2proAmpFlatSymAgentCfg(T2proAmpFlatAgentCfg):
 class T2proAmpDWAQFlatEnvCfg(T2proFlatEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.experiment_name = "t2pro_12dof_amp_dwaq_flat"
+        self.experiment_name = "z1_12dof_amp_dwaq_flat"
 @configclass
 class T2proAmpDWAQFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     seed = 42
@@ -443,11 +437,11 @@ class T2proAmpDWAQFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     clip_actions = None
     save_interval = 1000
     runner_class_name = "DreamWaQAmpOnPolicyRunner"
-    experiment_name = "t2pro_12dof_amp_dwaq_flat"
+    experiment_name = "z1_12dof_amp_dwaq_flat"
     run_name = ""
     logger = "tensorboard"
-    neptune_project = "t2pro_12dof_amp_dwaq_flat"
-    wandb_project = "t2pro_12dof_amp_dwaq_flat"
+    neptune_project = "z1_12dof_amp_dwaq_flat"
+    wandb_project = "z1_12dof_amp_dwaq_flat"
     resume = False
     load_run = ".*"
     load_checkpoint = "model_.*.pt"
