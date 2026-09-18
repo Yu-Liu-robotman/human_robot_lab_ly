@@ -35,7 +35,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import axis_angle_from_quat, quat_conjugate, quat_mul, quat_slerp
 
-from humanoid.assets.t2pro.t2pro import T2PRO as ROBOT_CFG
+from humanoid.assets.z1.z1 import T2PRO as ROBOT_CFG
 
 
 @configclass

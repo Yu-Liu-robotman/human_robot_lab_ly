@@ -3,7 +3,7 @@ from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
 
 import humanoid.mdp as mdp
-from humanoid.assets.t2pro.t2pro import T2PRO, T2PRO_ACTION_SCALE, KDS, KPS
+from humanoid.assets.z1.z1 import T2PRO, T2PRO_ACTION_SCALE, KDS, KPS
 from humanoid.envs.base.base_env_config import (  # noqa:F401
     BaseAgentCfg,
     BaseEnvCfg,

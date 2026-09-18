@@ -281,9 +281,12 @@ def play():
         )
     param_file = export_policy_param_file(env, export_model_dir)
     print('Exported policy param to: ', param_file)
-    model_path_mjcf_file = f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/t2pro/mjcf/{agent_cfg.experiment_name.split('_')[0]}.xml"
+    model_path_mjcf_file = f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/z1/mjcf/z1_v1_23dof.xml"
     
-    src_asset_file = f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/t2pro/mjcf/{agent_cfg.experiment_name.split('_')[0]}.xml"
+    src_asset_file = f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/z1/mjcf/{agent_cfg.experiment_name.split('_')[0]}.xml"
+    # model_path_mjcf_file = (f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/z1/mjcf/"f"{agent_cfg.experiment_name.split('_')[0]}_v1.xml")
+
+    # src_asset_file = (f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/z1/mjcf/{agent_cfg.experiment_name.split('_')[0]}.xml")
     load_run = os.path.dirname(resume_path)
     load_run = os.path.basename(load_run)
     mjcf_file = export_assets(src_asset_file, model_path_mjcf_file, load_run)
