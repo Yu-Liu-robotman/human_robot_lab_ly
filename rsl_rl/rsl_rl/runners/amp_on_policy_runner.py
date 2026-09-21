@@ -240,6 +240,9 @@ class AmpOnPolicyRunner:
         start_iter = self.current_learning_iteration
         tot_iter = start_iter + num_learning_iterations
         for it in range(start_iter, tot_iter):
+            # 重置本 iteration 的 AMP style reward 累积
+            amp_style_sum = 0.0
+            amp_style_steps = 0
             start = time.time()
             # Rollout
             with torch.inference_mode():
@@ -271,9 +274,12 @@ class AmpOnPolicyRunner:
                     terminal_amp_states = self.env.get_amp_obs_for_expert_trans()[reset_env_ids]
                     next_amp_obs_with_term[reset_env_ids] = terminal_amp_states
 
-                    rewards = self.alg.discriminator.predict_amp_reward(
+                    rewards, amp_d, step_style_reward = self.alg.discriminator.predict_amp_reward(
                         amp_obs, next_amp_obs_with_term, rewards, normalizer=self.alg.amp_normalizer
-                    )[0]
+                    )
+                    # AMP style reward（纯判别器奖励，未与 task reward 混合）仅用于日志
+                    amp_style_sum += step_style_reward.mean().item()
+                    amp_style_steps += 1
                     amp_obs = torch.clone(next_amp_obs)
                     self.alg.process_env_step(rewards, dones, infos, next_amp_obs_with_term)
 
@@ -441,6 +447,12 @@ class AmpOnPolicyRunner:
             )
             for key, value in locs["loss_dict"].items():
                 log_string += f"""{f'{key}:':>{pad}} {value:.4f}\n"""
+
+        # -- AMP style reward（纯判别器奖励，未与 task reward 混合）
+        if locs["amp_style_steps"] > 0:
+            amp_reward_style = locs["amp_style_sum"] / locs["amp_style_steps"]
+            self.writer.add_scalar("Train/amp_reward_style", amp_reward_style, locs["it"])
+            log_string += f"""{'amp_reward_style:':>{pad}} {amp_reward_style:.4f}\n"""
 
         log_string += ep_string
         log_string += (

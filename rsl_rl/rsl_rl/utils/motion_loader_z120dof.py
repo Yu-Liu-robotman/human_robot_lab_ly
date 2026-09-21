@@ -24,11 +24,6 @@ import torch
 import isaaclab.utils.math as math_utils
 from collections.abc import Sequence
 class AMPLoader:
-    # 一帧 txt 的字段顺序（由 humanoid/scripts/tools/bath_csv_to_npz.py 写出）：
-    #   joint_pos(J) + joint_vel(J) + body_pos_w(3B) + body_quat_w(4B)
-    #   + body_lin_vel_w(3B) + body_ang_vel_w(3B) + joint_pos_mujoco(M) + joint_vel_mujoco(M)
-    # B（刚体数）在 __init__ 里从机器人的 body 名数量推导，不再硬编码；
-    # J / M 是机器人固有的关节数，作为类常量给出。
     JOINT_POS_SIZE = 20
     JOINT_VEL_SIZE = 20
     JOINT_POS_MUJOCO_SIZE = 20
@@ -45,11 +40,9 @@ class AMPLoader:
         16, 17, 18, 19,
     ]
     
-    # AMP 观测 = 关节位置(S) + 关节速度(S) + 选中 body 的局部位置(3 * 选中数)
-    # 选中数 = len(amp_body_names) = 10，所以观测维度 = 20 + 20 + 30 = 70
     S_JOINT_POS_SIZE = 20
     S_JOINT_VEL_SIZE = 20
-    S_END_EFFECTOR_POS_SIZE = 30
+    S_END_EFFECTOR_POS_SIZE = 3*12
     
     S_JOINT_POSE_START_IDX = 0
     S_JOINT_POSE_END_IDX = S_JOINT_POSE_START_IDX + S_JOINT_POS_SIZE
@@ -80,11 +73,6 @@ class AMPLoader:
         print(self.body_select)
         self.anchor_idx = all_names_list.index(anchor_name)
 
-        # ------------------------------------------------------------------
-        # txt 帧布局：BODY_SIZE 由机器人刚体数（body 名数量）推导，不再硬编码。
-        # 数据集是用同一个 robot 导出的，两者必须一致；不一致会在下面
-        # 加载时的帧宽校验里立即报错。
-        # ------------------------------------------------------------------
         self.BODY_SIZE = len(all_names_list)
         self.BODY_POS_SIZE = self.BODY_SIZE * 3
         self.BODY_QUAT_SIZE = self.BODY_SIZE * 4

@@ -3,17 +3,12 @@ from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
 
 import humanoid.mdp as mdp
+import humanoid.envs.z1_20dof_amp_sym_flat.mdp as z1_mdp
 from humanoid.assets.z1.z1_20dof import Z120DOF, Z120DOF_ACTION_SCALE, KDS, KPS
 from humanoid.envs.base.base_env_config import (  # noqa:F401
     BaseAgentCfg,
     BaseEnvCfg,
-    BaseSceneCfg,
-    DomainRandCfg,
-    HeightScannerCfg,
-    PhysxCfg,
     RewardCfg,
-    RobotCfg,
-    SimCfg,
 )
 from humanoid.terrains import DWAQ_TERRAINS_CFG
 
@@ -35,14 +30,16 @@ KEY_POS_LIST=[
     "arm_right_shoulder_yaw_link",
     "arm_left_elbow_link",
     "arm_right_elbow_link",
-
+    "arm_left_hand_link",
+    "arm_right_hand_link"
 ]
 ANCHOR_NAME = "base_link"
+COMMAND_THRESHOLD = 0.1
 
 @configclass
 class TlibotCustomCfg:
-    push_curriculum_common_step = 20000 * 20
-    push_curriculum_start_step = 3000 * 20
+    push_curriculum_common_step = 20000 * 24
+    push_curriculum_start_step = 3000 * 24
 
 @configclass
 class Z120DOFRewardCfg(RewardCfg):
@@ -68,13 +65,14 @@ class Z120DOFRewardCfg(RewardCfg):
             "low_speed_threshold": 0.20, # 0.35
             "high_speed_threshold": 0.5, # 0.6
             "stand_cmd": True,
+            "command_threshold": COMMAND_THRESHOLD
         },
     )
     feet_slide = RewTerm(
         func=mdp.feet_slide,
         weight=-0.1,
         params={
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_roll_link"),
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
         },
     )
@@ -88,7 +86,7 @@ class Z120DOFRewardCfg(RewardCfg):
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
             "threshold": 500,
             "max_reward": 400,
-            "command_threshold": 0.1,
+            "command_threshold": COMMAND_THRESHOLD,
             "stand_cmd": True,
         },
     )
@@ -100,7 +98,7 @@ class Z120DOFRewardCfg(RewardCfg):
     stand_still_joint_deviation_l1 = RewTerm(func=mdp.leglab_stand_still_joint_deviation_l1,
         weight=-1.0,
         params={
-            "command_threshold": 0.1,
+            "command_threshold": COMMAND_THRESHOLD,
             "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
             "stand_cmd": True,
         },
@@ -108,8 +106,30 @@ class Z120DOFRewardCfg(RewardCfg):
     base_height = RewTerm(func=mdp.base_height_penalty,weight=-1.0,params={"target_height": 0.83,"tolerance": 0.01})
 
     # add*
-    
-
+    feet_not_lifted_when_commanded = RewTerm(
+        func=z1_mdp.feet_not_lifted_when_commanded,
+        weight=-10.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+            "command_threshold": COMMAND_THRESHOLD,
+            "min_contact_time": 0.02,
+        }
+    )
+    swing_foot_clearance = RewTerm(
+        func=z1_mdp.walk_swing_foot_clearance,
+        weight=-0.3,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+            "contact_height": 0.037,
+            "target_clearance": 0.077,
+            "minimum_air_time": 0.05,
+            "maximum_air_time": 0.35,
+            "minimum_support_time": 0.04,
+            "minimum_speed": COMMAND_THRESHOLD,
+            "maximum_forward_speed": 0.45,
+        },
+    )
 
 @configclass
 class Z120DOFFlatEnvCfg(BaseEnvCfg):
@@ -210,7 +230,7 @@ class Z120DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     load_checkpoint = "model_.*.pt"
 
     # amp parameter
-    amp_reward_coef = 0.5
+    amp_reward_coef = 2.5
     amp_task_reward_lerp = 0.5
 
     amp_motion_files = [
@@ -238,7 +258,8 @@ class Z120DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
 
                             ]
     amp_num_preload_transitions = 200000
-    amp_discr_hidden_dims = [1024, 512, 256]
+    # amp_discr_hidden_dims = [1024, 512, 256]
+    amp_discr_hidden_dims = [1024, 512]
     min_normalized_std = [0.05] * 20
     amp_body_names=KEY_POS_LIST
     amp_anchor_name=ANCHOR_NAME
