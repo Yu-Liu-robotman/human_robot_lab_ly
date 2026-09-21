@@ -722,7 +722,7 @@ class Z1AmpSymEnv20DOF(BaseEnv):
         move_down *= ~move_up
         self.scene.terrain.update_env_origins(env_ids, move_up, move_down)
         extras = {}
-        extras["Curriculum/terrain_levels"] = torch.mean(self.scene.terrain.terrain_levels.float())
+        # extras["Curriculum/terrain_levels"] = torch.mean(self.scene.terrain.terrain_levels.float())
         return extras
 
     def get_observations(self):

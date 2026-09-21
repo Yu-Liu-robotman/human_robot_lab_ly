@@ -6,6 +6,7 @@ import torch
 from isaaclab.assets import Articulation
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import ContactSensor
+from isaaclab.envs import mdp
 
 if TYPE_CHECKING:
     from humanoid.envs.base.base_env import BaseEnv
@@ -70,3 +71,12 @@ def feet_not_lifted_when_commanded(
     both_feet_in_contact = (current_contact_time > min_contact_time).all(dim=-1)
 
     return (is_commanded & both_feet_in_contact).float()
+
+def stand_still_joint_deviation_l1(
+    env: BaseEnv,
+    command_threshold: float = 0.06,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    command = env.command_generator.command
+    active = (torch.norm(command[:, :3], dim=-1) <= command_threshold)
+    return mdp.joint_deviation_l1(env, asset_cfg) * active

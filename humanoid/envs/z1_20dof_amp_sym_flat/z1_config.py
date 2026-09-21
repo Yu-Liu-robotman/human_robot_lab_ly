@@ -42,8 +42,8 @@ COMMAND_THRESHOLD = 0.05
 
 @configclass
 class Z120DOFRewardCfg(RewardCfg):
-    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=3.0, params={"std": 0.35}) # 3.0
-    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=3.0, params={"std": 0.35})   # 3.0
+    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=2.0, params={"std": 0.35}) # 3.0
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=2.0, params={"std": 0.35})   # 3.0
     # -- penalties
     flat_orientation_l2 = RewTerm(func=mdp.adaptive_flat_orientation_l2, weight=-1.0)
     lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-0.2)
@@ -94,14 +94,33 @@ class Z120DOFRewardCfg(RewardCfg):
         weight=-1.0
     )
     ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
-    stand_still_joint_deviation_l1 = RewTerm(func=mdp.leglab_stand_still_joint_deviation_l1,
-        weight=-1.0,
+
+    joint_deviation_hip = RewTerm(
+        func=z1_mdp.stand_still_joint_deviation_l1,
+        weight=-0.1,
         params={
-            "command_threshold": COMMAND_THRESHOLD,
-            "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
-            "stand_cmd": True,
+            "command_name": "base_velocity",
+            "use_stand_mask": True,
+            "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw_joint", ".*_hip_roll_joint"]),
         },
-    ) 
+    )
+
+    joint_deviation_arms = RewTerm(
+        func=z1_mdp.stand_still_joint_deviation_l1,
+        weight=-0.05,
+        params={
+            "command_name": "base_velocity",
+            "use_stand_mask": True,
+            "asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=[
+                    ".*_shoulder_.*_joint",
+                    ".*_elbow_joint"
+                ],
+            ),
+        },
+    )
+
     base_height = RewTerm(func=mdp.base_height_penalty,weight=-1.0,params={"target_height": 0.83,"tolerance": 0.01})
 
     # add*
@@ -116,7 +135,7 @@ class Z120DOFRewardCfg(RewardCfg):
     )
     swing_foot_clearance = RewTerm(
         func=z1_mdp.walk_swing_foot_clearance,
-        weight=-0.3,
+        weight=-0.5,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
@@ -187,7 +206,7 @@ class Z120DOFFlatEnvCfg(BaseEnvCfg):
         # add*
         self.domain_rand.events.push_robot.interval_range_s = (4.0, 8.0)
         self.domain_rand.events.push_robot.params["velocity_range"] = {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}
-
+        self.scene.max_episode_length_s = 10
 @configclass
 class Z120DOFFlatAgentCfg(BaseAgentCfg):
     def __post_init__(self):
@@ -252,7 +271,7 @@ class Z120DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     load_checkpoint = "model_.*.pt"
 
     # amp parameter
-    amp_reward_coef = 2.5
+    amp_reward_coef = 1.0
     amp_task_reward_lerp = 0.5
 
     amp_motion_files = [
