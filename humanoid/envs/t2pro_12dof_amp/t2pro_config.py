@@ -61,16 +61,16 @@ class T2proRewardCfg(RewardCfg):
     #     },
     # )
 
-    # feet_swing_height = RewTerm(
-    #     func=mdp.feet_swing_height,
-    #     weight=0.5,
-    #     params={
-    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-    #         "target_height": 0.10,
-    #         "sigma": 0.02
-    #     },
-    # )
+    feet_swing_height = RewTerm(
+        func=mdp.feet_swing_height,
+        weight=1.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+            "target_height": 0.06,
+            "sigma": 0.02
+        },
+    )
 
     alive = RewTerm(func=mdp.dwaq_alive, weight=0.15) 
     # # 奖励直膝行走
@@ -106,7 +106,7 @@ class T2proRewardCfg(RewardCfg):
     )
     feet_force = RewTerm(
         func=mdp.mjlab_soft_landing,
-        weight=-5e-3,
+        weight=-5e-2, #-5e-3
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
             "threshold": 500,
@@ -118,7 +118,7 @@ class T2proRewardCfg(RewardCfg):
     feet_too_near = RewTerm(
         func=mdp.feet_too_near_humanoid,
         weight=-2.0,
-        params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*ankle_roll.*"]), "threshold": 0.17},
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*ankle_roll.*"]), "threshold": 0.18},
     )
     feet_y_distance = RewTerm(func=mdp.feet_y_distance, weight=-5.0)
     knee_distance = RewTerm(
@@ -141,19 +141,6 @@ class T2proRewardCfg(RewardCfg):
             )
         },
     )
-    # joint_deviation_global = RewTerm(
-    #             func=mdp.joint_deviation_l1,
-    #             weight=-1.0,
-    #             params={
-    #                 "asset_cfg": SceneEntityCfg(
-    #                     "robot", joint_names=[
-    #                         "torso_pitch_joint",
-    #                         "torso_roll_joint",
-    #                         "torso_yaw_joint",
-    #                         ]
-    #                 )
-    #             },
-    #         )
     ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
     # ankle_action = RewTerm(func=mdp.ankle_action, weight=-0.001)
     stand_still_joint_deviation_l1 = RewTerm(
