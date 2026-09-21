@@ -23,7 +23,7 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
     RslRlPpoAlgorithmCfg,
     RslRlSymmetryCfg,
 )
-from humanoid.envs.z1_20dof_amp_sym_flat.symmetry import z120dof
+from humanoid.envs.z1_20dof_amp_sym_flat.mdp.symmetry import z120dof
 KEY_POS_LIST=[
     "leg_left_hip_pitch_link",
     "leg_right_hip_pitch_link",
@@ -35,8 +35,7 @@ KEY_POS_LIST=[
     "arm_right_shoulder_yaw_link",
     "arm_left_elbow_link",
     "arm_right_elbow_link",
-    "arm_left_hand_link",
-    "arm_right_hand_link"
+
 ]
 ANCHOR_NAME = "base_link"
 
@@ -47,12 +46,23 @@ class TlibotCustomCfg:
 
 @configclass
 class Z120DOFRewardCfg(RewardCfg):
-    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=4.0, params={"std": 0.25}) # 3.0
-    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=4.0, params={"std": 0.25})   # 3.0
-    applied_torque_limits = RewTerm(func=mdp.applied_torque_limits, weight=-0.1)
+    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=1.0, params={"std": 0.25}) # 3.0
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=1.0, params={"std": 0.25})   # 3.0
+    # -- penalties
+    flat_orientation_l2 = RewTerm(func=mdp.adaptive_flat_orientation_l2, weight=-1.0)
+    lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-0.2)
+    ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.05)
+    dof_torques_l2 = RewTerm(func=mdp.applied_torque_limits, weight=-0.01)
+    dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.0e-7)
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.005)
+    dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-10.0)
+    energy = RewTerm(func=mdp.energy, weight=-1e-3)
+    body_orientation_l2 = RewTerm(func=mdp.body_orientation_l2, weight=-1.0, 
+        params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link")})
+    
     feet_air_time = RewTerm(
         func=mdp.adaptive_feet_air_time_positive_biped,
-        weight=1.5,  # 1.0
+        weight=1.0,  # 1.0
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
             "low_speed_threshold": 0.20, # 0.35
@@ -60,50 +70,17 @@ class Z120DOFRewardCfg(RewardCfg):
             "stand_cmd": True,
         },
     )
-
-    feet_swing_height = RewTerm(
-        func=mdp.feet_swing_height,
-        weight=0.1,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-            "target_height": 0.08,
-            "sigma": 0.02
-        },
-    )
-
-    alive = RewTerm(func=mdp.dwaq_alive, weight=0.15) 
-    # # 奖励直膝行走
-    # target_base_height = RewTerm(func=mdp.target_base_height, weight=1.0, 
-    #                              params={"base_height_target": 0.81})
-    # 惩罚   
-    ang_vel_xy_l2 = RewTerm(func=mdp.mjlab_body_angular_velocity_penalty, weight=-0.05,  params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link")},)
-    energy = RewTerm(func=mdp.energy, weight=-1e-3)
-    dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
-    dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-10.0)
-    undesired_contacts = RewTerm(
-        func=mdp.undesired_contacts,
-        weight=-1.0,
-        params={"sensor_cfg": SceneEntityCfg("contact_sensor", body_names="(?!.*ankle.*).*"), "threshold": 1.0},
-    )
-    fly = RewTerm(
-        func=mdp.fly,
-        weight=-1.0,
-        params={"sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"), "threshold": 1.0},
-    )
-    flat_orientation_l2 = RewTerm(func=mdp.adaptive_flat_orientation_l2, weight=-2.0)
-    body_orientation_l2 = RewTerm(func=mdp.body_orientation_l2, weight=-5.0, params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link"),})
-    termination_penalty = RewTerm(func=mdp.is_terminated, weight=-200.0)
-
     feet_slide = RewTerm(
-        func=mdp.atom_feet_slide,
-        weight=-0.5,
+        func=mdp.feet_slide,
+        weight=-0.1,
         params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_roll_link"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
         },
     )
+    dont_vel_tabu = RewTerm(func=mdp.dont_vel_tabu, weight=-1.0)
+    termination_penalty = RewTerm(func=mdp.is_terminated, weight=-50.0)
+
     feet_force = RewTerm(
         func=mdp.mjlab_soft_landing,
         weight=-5e-3,
@@ -115,116 +92,24 @@ class Z120DOFRewardCfg(RewardCfg):
             "stand_cmd": True,
         },
     )
-    feet_too_near = RewTerm(
-        func=mdp.feet_too_near_humanoid,
-        weight=-2.0,
-        params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*ankle_roll.*"]), "threshold": 0.16},
-    )
-    feet_y_distance = RewTerm(func=mdp.feet_y_distance, weight=-5.0)
-    knee_distance = RewTerm(
-        func=mdp.knee_distance_exp,
-        weight=1.0,
-        params={"asset_cfg": SceneEntityCfg("robot", body_names=[".*knee.*"]), 
-                "target_dist": 0.2, "std": 0.05, "clip_error": 0.03},
-    )
     ankle_orientation_l2 = RewTerm(
         func=mdp.feet_yaw_l2, params={"asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll.*")}, 
-        weight=-5.0
-    )
-    # 优化摆臂
-    joint_deviation_arms = RewTerm(
-        func=mdp.joint_deviation_l1,
-        weight=-5.0,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*"]
-            )
-        },
-    )
-
-    joint_deviation_hip = RewTerm(
-        func=mdp.joint_deviation_l1,
-        weight=-0.01,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[".*_hip_roll.*", ".*_hip_yaw.*"]
-            )
-        },
+        weight=-1.0
     )
     ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
-    # ankle_action = RewTerm(func=mdp.ankle_action, weight=-0.001)
-    stand_still_joint_deviation_l1 = RewTerm(
-        func=mdp.leglab_stand_still_joint_deviation_l1,
-        weight=-4.0,
+    stand_still_joint_deviation_l1 = RewTerm(func=mdp.leglab_stand_still_joint_deviation_l1,
+        weight=-1.0,
         params={
             "command_threshold": 0.1,
             "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
             "stand_cmd": True,
         },
     ) 
-    
-    idle_penalty_lin = RewTerm(
-        func=mdp.dwaq_idle_when_commanded,
-        weight=-5.0,
-        params={"cmd_threshold": 0.01, "vel_threshold": 0.01},
-    )
-    
-    idle_penalty_ang = RewTerm(
-        func=mdp.dwaq_idle_when_commanded_angle,
-        weight=-5.0,
-        params={"cmd_threshold": 0.01, "vel_threshold": 0.01},
-    )
-    double_support_penalize = RewTerm(
-        func=mdp.double_support_penalize,
-        weight=-2.0,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "command_threshold": 0.1,
-            "max_ds_time": 0.2,
-            "force_threshold": 5.0,
-            "stand_cmd": True,
-        },
-    )
-    # 抑制elbow外翻
-    joint_sign_positive_overflow = RewTerm(
-        func=mdp.joint_sign_positive_overflow_l1,
-        weight=-0.5,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[".*_elbow_.*"]
-            )
-        },
-    )
-    base_height = RewTerm(
-        func=mdp.base_height_penalty,
-        weight=-1.0,
-        params={"target_height": 0.83,
-                "tolerance": 0.01},
-    )
-    # 优化旋转不灵敏
-    dont_wait_yawp = RewTerm(func=mdp.dont_wait_yawp, weight=-1.0)
-    dont_wait_yawn = RewTerm(func=mdp.dont_wait_yawn, weight=-1.0)
+    base_height = RewTerm(func=mdp.base_height_penalty,weight=-1.0,params={"target_height": 0.83,"tolerance": 0.01})
 
-    # 优化横向行走不灵敏
-    dont_wait_linyp = RewTerm(func=mdp.dont_wait_linyp, weight=-1.0)
-    dont_wait_linyn = RewTerm(func=mdp.dont_wait_linyn, weight=-1.0)
-
-    # 优化前向行走不灵敏
-    dont_wait = RewTerm(func=mdp.dont_wait, weight=-1.0)
-    dont_wait_height = RewTerm(func=mdp.dont_wait_height, weight=-1.0)
-
-    # 优化踏步飘移
-    dont_vel_tabu = RewTerm(func=mdp.dont_vel_tabu, weight=-1.0)
+    # add*
     
-    zero_double_support_penalize = RewTerm(
-        func=mdp.zero_double_support_penalize,
-        weight=-10.0,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "max_ds_time": 0.1,
-            "force_threshold": 5.0,
-        },
-    )
+
 
 @configclass
 class Z120DOFFlatEnvCfg(BaseEnvCfg):
@@ -378,17 +263,3 @@ class Z120DOFAmpFlatSymAgentCfg(Z120DOFAmpFlatAgentCfg):
         )
 
 
-"""
-python3 humanoid/scripts/train.py \
-    --task z1_20dof_amp_sym_flat \
-    --num_envs 4096 \
-    --headless
-
-python3 humanoid/scripts/play.py \
-    --task z1_20dof_amp_sym_flat \
-    --num_envs 10 \
-    
-python3 humanoid/scripts/fdsim2ros.py \
-    --experiment_name z1_20dof_amp_sym_flat \
-    --load_run 2026-09-21_12-23-07
-"""

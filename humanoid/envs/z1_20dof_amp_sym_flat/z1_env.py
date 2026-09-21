@@ -802,21 +802,14 @@ class Z1AmpSymEnv20DOF(BaseEnv):
         return torch_utils.set_seed(seed)
     
     def get_amp_obs_for_expert_trans(self):
-        """Gets amp obs from policy.
-
-        注意：专家数据集里 joint_pos/joint_vel 段是按【机器人原始关节顺序】导出的
-        (humanoid/scripts/tools/bath_csv_to_npz.py: log["joint_pos"] = robot.data.joint_pos[0])，
-        而 self.dof_pos / self.dof_vel 已经按 cfg.dof_names(= joint_sdk_names) 重排过。
-        两者顺序不同，若这里用 self.dof_pos 就会与专家观测错列 —— 判别器能轻易区分、
-        策略永远追不上，表现为「完全没有模仿效果」。所以这里必须用原始顺序。
-        """
-        joint_pos = self.robot.data.joint_pos[:, [
+        """Gets amp obs from policy"""
+        joint_pos = self.dof_pos[:, [
             0, 1, 2, 3, 4, 5, 
             6, 7, 8, 9, 10, 11,
             12, 13, 14, 15, 
             16, 17, 18, 19
         ]]
-        joint_vel = self.robot.data.joint_vel[:, [
+        joint_vel = self.dof_vel[:, [
             0, 1, 2, 3, 4, 5, 
             6, 7, 8, 9, 10, 11,
             12, 13, 14, 15, 

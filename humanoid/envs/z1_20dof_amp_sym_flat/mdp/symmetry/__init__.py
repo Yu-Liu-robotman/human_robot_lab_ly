@@ -7,6 +7,6 @@
     data_augmentation_func=z120dof.compute_symmetric_states
 """
 
-from humanoid.envs.z1_20dof_amp_sym_flat.symmetry.z120dof import compute_symmetric_states
+from humanoid.envs.z1_20dof_amp_sym_flat.mdp.symmetry.z120dof import compute_symmetric_states
 
 __all__ = ["compute_symmetric_states"]
