@@ -115,6 +115,7 @@ class Z1AmpSymEnv20DOF(BaseEnv):
         )
         self.command_generator = TlibotUniformVelocityCommand(cfg=command_cfg, env=self)
         self.reward_manager = RewardManager(self.cfg.reward, self)
+        self.init_termination_manager()
 
         self.init_buffers()
 
@@ -170,10 +171,6 @@ class Z1AmpSymEnv20DOF(BaseEnv):
 
         self.robot_cfg = SceneEntityCfg(name="robot")
         self.robot_cfg.resolve(self.scene)
-        self.termination_contact_cfg = SceneEntityCfg(
-            name="contact_sensor", body_names=self.cfg.robot.terminate_contacts_body_names
-        )
-        self.termination_contact_cfg.resolve(self.scene)
         self.feet_cfg = SceneEntityCfg(name="contact_sensor", body_names=self.cfg.robot.feet_body_names)
         self.feet_cfg.resolve(self.scene)
 
@@ -319,13 +316,6 @@ class Z1AmpSymEnv20DOF(BaseEnv):
         self.feet_vel_in_body = torch.zeros(self.num_envs, num_feet, 3, device=self.device)
         self.forward_obstacle_height = torch.zeros(self.num_envs, 2, device=self.device)
         self.terrain_height_at_feet = torch.zeros(self.num_envs, 2, device=self.device)
-        if self.cfg.domain_rand.events.push_robot is not None:
-            self.push_velocity_range_base = self.cfg.domain_rand.events.push_robot.params["velocity_range"]
-        else:
-            self.push_velocity_range_base = {
-                "x": (-0.0, 0.0),
-                "y": (-0.0, 0.0),
-            }
         self.init_obs_buffer()
 
     def compute_current_observations(self):
@@ -615,6 +605,7 @@ class Z1AmpSymEnv20DOF(BaseEnv):
 
         reward_extras = self.reward_manager.reset(env_ids)
         self.extras["log"].update(reward_extras)
+        self.extras["log"].update(self.termination_manager.reset(env_ids))
         self.extras["time_outs"] = self.time_out_buf
 
         self.command_generator.reset(env_ids)
@@ -672,7 +663,6 @@ class Z1AmpSymEnv20DOF(BaseEnv):
                     & (self.stand_flag[:, 0] == 1.)
                 ).unsqueeze(1)
         self.walk_mask = ~self.stand_mask
-        self.update_push_curriculum()
         if "interval" in self.event_manager.available_modes:
             self.event_manager.apply(mode="interval", dt=self.step_dt)
 
@@ -687,52 +677,6 @@ class Z1AmpSymEnv20DOF(BaseEnv):
                                        "vel_obs": self.vel_buf.clone()}
 
         return actor_obs, reward_buf, self.reset_buf, self.extras
-
-    def check_reset(self):
-        # net_contact_forces = self.contact_sensor.data.net_forces_w_history
-        # torso_position = self.robot.data.root_pos_w[:, :3]
-        # torso_position = torso_position[:, 2].view(-1, 1)
-        # # self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
-        # reset_buf = torch.any(torso_position < 0.2, dim=1)
-
-        # reset_buf |= torch.any(
-        #     torch.max(
-        #         torch.norm(
-        #             net_contact_forces[:, :, self.termination_contact_cfg.body_ids],
-        #             dim=-1,
-        #         ),
-        #         dim=1,
-        #     )[0]
-        #     > 1.0,
-        #     dim=1,
-        # )
-        net_contact_forces = self.contact_sensor.data.net_forces_w_history
-
-        # 1. Root height
-        root_height = self.robot.data.root_pos_w[:, 2]
-        fallen_height = root_height < 0.4
-
-        # 2. Orientation
-        projected_gravity = self.robot.data.projected_gravity_b
-        fallen_orientation = projected_gravity[:, 2] > -0.5
-
-        # 3. Base / torso contact
-        fallen_contact = torch.any(
-            torch.max(
-                torch.norm(
-                    net_contact_forces[:, :, self.termination_contact_cfg.body_ids],
-                    dim=-1,
-                ),
-                dim=1,
-            )[0] > 1.0,
-            dim=1,
-        )
-
-        reset_buf = fallen_height | fallen_orientation | fallen_contact
-        
-        time_out_buf = self.episode_length_buf >= self.max_episode_length
-        reset_buf |= time_out_buf
-        return reset_buf, time_out_buf
 
     def init_obs_buffer(self):
         if self.add_noise:
@@ -878,39 +822,3 @@ class Z1AmpSymEnv20DOF(BaseEnv):
             dim=-1,
         )
         return amp_obs
-    
-    def update_push_curriculum(self):
-            try:
-                denom = max(1, self.cfg.custom.push_curriculum_common_step)
-                common_step_counter = self.sim_step_counter // self.cfg.sim.decimation
-
-                progress = np.clip(
-                    (common_step_counter - self.cfg.custom.push_curriculum_start_step)
-                    / denom,
-                    0.0,
-                    1.0,
-                )
-
-                scale = float(progress ** 2.0)
-                
-                velocity_range = {
-                    k: (float(v[0]) * scale, float(v[1]) * scale)
-                    for k, v in self.push_velocity_range_base.items()
-                }
-
-                self.cfg.domain_rand.events.push_robot.params["velocity_range"] = velocity_range
-
-                if "log" not in self.extras:
-                    self.extras["log"] = {}
-
-                self.extras["log"]["push_curriculum/scale"] = scale
-
-                for k, v in velocity_range.items():
-                    self.extras["log"][f"push_curriculum/{k}_min"] = v[0]
-                    self.extras["log"][f"push_curriculum/{k}_max"] = v[1]
-
-            except Exception as e:
-                if "log" not in self.extras:
-                    self.extras["log"] = {}
-
-                self.extras["log"]["push_curriculum/error"] = 1.0

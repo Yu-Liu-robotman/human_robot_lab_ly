@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from isaaclab.assets.articulation import Articulation
 from isaaclab.envs.mdp.commands import UniformVelocityCommand, UniformVelocityCommandCfg
-from isaaclab.managers import EventManager, RewardManager
+from isaaclab.managers import EventManager, RewardManager, TerminationManager
 from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.scene import InteractiveScene
 from isaaclab.sensors import ContactSensor, RayCaster
@@ -63,6 +63,7 @@ class BaseEnv(VecEnv):
         )
         self.command_generator = UniformVelocityCommand(cfg=command_cfg, env=self)
         self.reward_manager = RewardManager(self.cfg.reward, self)
+        self.init_termination_manager()
 
         self.init_buffers()
 
@@ -71,6 +72,12 @@ class BaseEnv(VecEnv):
         if "startup" in self.event_manager.available_modes:
             self.event_manager.apply(mode="startup")
         self.reset(env_ids)
+
+    def init_termination_manager(self):
+        self.cfg.terminations.base_contact.params["sensor_cfg"].body_names = (
+            self.cfg.robot.terminate_contacts_body_names
+        )
+        self.termination_manager = TerminationManager(self.cfg.terminations, self)
 
     def init_buffers(self):
         self.extras = {}
@@ -100,10 +107,6 @@ class BaseEnv(VecEnv):
 
         self.robot_cfg = SceneEntityCfg(name="robot")
         self.robot_cfg.resolve(self.scene)
-        self.termination_contact_cfg = SceneEntityCfg(
-            name="contact_sensor", body_names=self.cfg.robot.terminate_contacts_body_names
-        )
-        self.termination_contact_cfg.resolve(self.scene)
         self.feet_cfg = SceneEntityCfg(name="contact_sensor", body_names=self.cfg.robot.feet_body_names)
         self.feet_cfg.resolve(self.scene)
 
@@ -192,6 +195,7 @@ class BaseEnv(VecEnv):
 
         reward_extras = self.reward_manager.reset(env_ids)
         self.extras["log"].update(reward_extras)
+        self.extras["log"].update(self.termination_manager.reset(env_ids))
         self.extras["time_outs"] = self.time_out_buf
 
         self.command_generator.reset(env_ids)
@@ -235,21 +239,9 @@ class BaseEnv(VecEnv):
         return actor_obs, reward_buf, self.reset_buf, self.extras
 
     def check_reset(self):
-        net_contact_forces = self.contact_sensor.data.net_forces_w_history
-
-        reset_buf = torch.any(
-            torch.max(
-                torch.norm(
-                    net_contact_forces[:, :, self.termination_contact_cfg.body_ids],
-                    dim=-1,
-                ),
-                dim=1,
-            )[0]
-            > 1.0,
-            dim=1,
-        )
-        time_out_buf = self.episode_length_buf >= self.max_episode_length
-        reset_buf |= time_out_buf
+        self.termination_manager.compute()
+        reset_buf = self.termination_manager.terminated | self.termination_manager.time_outs
+        time_out_buf = self.termination_manager.time_outs.clone()
         return reset_buf, time_out_buf
 
     def init_obs_buffer(self):

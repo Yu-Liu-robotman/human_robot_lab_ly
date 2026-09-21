@@ -4,6 +4,7 @@ from dataclasses import MISSING
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 from isaaclab.utils import configclass
 
@@ -15,6 +16,26 @@ from humanoid.sensors.lidar import LidarCfg
 @configclass
 class RewardCfg:
     pass
+
+
+@configclass
+class TerminationCfg:
+    time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    base_height = DoneTerm(
+        func=mdp.root_height_below_minimum,
+        params={"minimum_height": 0.4},
+    )
+    bad_orientation = DoneTerm(
+        func=mdp.bad_orientation,
+        params={"limit_angle": math.radians(60.0)},
+    )
+    base_contact = DoneTerm(
+        func=mdp.illegal_contact,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=["base_link"]),
+            "threshold": 1.0,
+        },
+    )
 
 
 @configclass

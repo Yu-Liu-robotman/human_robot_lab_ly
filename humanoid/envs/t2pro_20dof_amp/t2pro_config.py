@@ -1,4 +1,5 @@
 from isaaclab.managers import RewardTermCfg as RewTerm
+from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
 
@@ -14,6 +15,7 @@ from humanoid.envs.base.base_env_config import (  # noqa:F401
     RewardCfg,
     RobotCfg,
     SimCfg,
+    TerminationCfg,
 )
 from humanoid.terrains import GRAVEL_TERRAINS_CFG, ROUGH_TERRAINS_CFG, DWAQ_TERRAINS_CFG, SLOPE_TERRAINS_CFG
 
@@ -223,10 +225,20 @@ class T2proRewardCfg(RewardCfg):
     )
 
 @configclass
+class T2proTerminationCfg(TerminationCfg):
+    base_height = DoneTerm(
+        func=mdp.root_height_below_minimum,
+        params={"minimum_height": 0.2},
+    )
+    bad_orientation = None
+
+
+@configclass
 class T2proFlatEnvCfg(BaseEnvCfg):
     kds = KDS
     kps = KPS
     reward = T2proRewardCfg()
+    terminations = T2proTerminationCfg()
     custom: TlibotCustomCfg = TlibotCustomCfg()
     key_pos_list = KEY_POS_LIST
     anchor_name = ANCHOR_NAME

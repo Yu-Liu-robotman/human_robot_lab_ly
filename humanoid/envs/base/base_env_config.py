@@ -30,6 +30,7 @@ from .base_config import (
     RewardCfg,
     RobotCfg,
     SimCfg,
+    TerminationCfg,
 )
 
 
@@ -82,6 +83,7 @@ class BaseEnvCfg:
         feet_body_names=MISSING,
     )
     reward = RewardCfg()
+    terminations = TerminationCfg()
     normalization: NormalizationCfg = NormalizationCfg(
         obs_scales=ObsScalesCfg(
             lin_vel=1.0,

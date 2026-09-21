@@ -115,6 +115,7 @@ class T2proEnv23DOF(BaseEnv):
         )
         self.command_generator = TlibotUniformVelocityCommand(cfg=command_cfg, env=self)
         self.reward_manager = RewardManager(self.cfg.reward, self)
+        self.init_termination_manager()
 
         self.init_buffers()
 
@@ -170,10 +171,6 @@ class T2proEnv23DOF(BaseEnv):
 
         self.robot_cfg = SceneEntityCfg(name="robot")
         self.robot_cfg.resolve(self.scene)
-        self.termination_contact_cfg = SceneEntityCfg(
-            name="contact_sensor", body_names=self.cfg.robot.terminate_contacts_body_names
-        )
-        self.termination_contact_cfg.resolve(self.scene)
         self.feet_cfg = SceneEntityCfg(name="contact_sensor", body_names=self.cfg.robot.feet_body_names)
         self.feet_cfg.resolve(self.scene)
 
@@ -618,6 +615,7 @@ class T2proEnv23DOF(BaseEnv):
 
         reward_extras = self.reward_manager.reset(env_ids)
         self.extras["log"].update(reward_extras)
+        self.extras["log"].update(self.termination_manager.reset(env_ids))
         self.extras["time_outs"] = self.time_out_buf
 
         self.command_generator.reset(env_ids)
@@ -690,52 +688,6 @@ class T2proEnv23DOF(BaseEnv):
                                        "vel_obs": self.vel_buf.clone()}
 
         return actor_obs, reward_buf, self.reset_buf, self.extras
-
-    def check_reset(self):
-        # net_contact_forces = self.contact_sensor.data.net_forces_w_history
-        # torso_position = self.robot.data.root_pos_w[:, :3]
-        # torso_position = torso_position[:, 2].view(-1, 1)
-        # # self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
-        # reset_buf = torch.any(torso_position < 0.2, dim=1)
-
-        # reset_buf |= torch.any(
-        #     torch.max(
-        #         torch.norm(
-        #             net_contact_forces[:, :, self.termination_contact_cfg.body_ids],
-        #             dim=-1,
-        #         ),
-        #         dim=1,
-        #     )[0]
-        #     > 1.0,
-        #     dim=1,
-        # )
-        net_contact_forces = self.contact_sensor.data.net_forces_w_history
-
-        # 1. Root height
-        root_height = self.robot.data.root_pos_w[:, 2]
-        fallen_height = root_height < 0.4
-
-        # 2. Orientation
-        projected_gravity = self.robot.data.projected_gravity_b
-        fallen_orientation = projected_gravity[:, 2] > -0.5
-
-        # 3. Base / torso contact
-        fallen_contact = torch.any(
-            torch.max(
-                torch.norm(
-                    net_contact_forces[:, :, self.termination_contact_cfg.body_ids],
-                    dim=-1,
-                ),
-                dim=1,
-            )[0] > 1.0,
-            dim=1,
-        )
-
-        reset_buf = fallen_height | fallen_orientation | fallen_contact
-        
-        time_out_buf = self.episode_length_buf >= self.max_episode_length
-        reset_buf |= time_out_buf
-        return reset_buf, time_out_buf
 
     def init_obs_buffer(self):
         if self.add_noise:

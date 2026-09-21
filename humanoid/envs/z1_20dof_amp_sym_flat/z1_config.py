@@ -1,3 +1,5 @@
+import math
+
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
@@ -5,10 +7,12 @@ from isaaclab.utils import configclass
 import humanoid.mdp as mdp
 import humanoid.envs.z1_20dof_amp_sym_flat.mdp as z1_mdp
 from humanoid.assets.z1.z1_20dof import Z120DOF, Z120DOF_ACTION_SCALE, KDS, KPS
+from isaaclab.managers import TerminationTermCfg as DoneTerm
 from humanoid.envs.base.base_env_config import (  # noqa:F401
     BaseAgentCfg,
     BaseEnvCfg,
     RewardCfg,
+    TerminationCfg,
 )
 from humanoid.terrains import DWAQ_TERRAINS_CFG
 
@@ -34,17 +38,12 @@ KEY_POS_LIST=[
     "arm_right_hand_link"
 ]
 ANCHOR_NAME = "base_link"
-COMMAND_THRESHOLD = 0.1
-
-@configclass
-class TlibotCustomCfg:
-    push_curriculum_common_step = 20000 * 24
-    push_curriculum_start_step = 3000 * 24
+COMMAND_THRESHOLD = 0.05
 
 @configclass
 class Z120DOFRewardCfg(RewardCfg):
-    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=1.0, params={"std": 0.25}) # 3.0
-    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=1.0, params={"std": 0.25})   # 3.0
+    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=3.0, params={"std": 0.35}) # 3.0
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=3.0, params={"std": 0.35})   # 3.0
     # -- penalties
     flat_orientation_l2 = RewTerm(func=mdp.adaptive_flat_orientation_l2, weight=-1.0)
     lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-0.2)
@@ -130,13 +129,32 @@ class Z120DOFRewardCfg(RewardCfg):
             "maximum_forward_speed": 0.45,
         },
     )
+    
+@configclass
+class Z120DOFTerminationCfg:
+    time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    base_height = DoneTerm(
+        func=mdp.root_height_below_minimum,
+        params={"minimum_height": 0.4},
+    )
+    bad_orientation = DoneTerm(
+        func=mdp.bad_orientation,
+        params={"limit_angle": math.radians(60.0)},
+    )
+    base_contact = DoneTerm(
+        func=mdp.illegal_contact,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=["base_link"]),
+            "threshold": 1.0,
+        },
+    )
 
 @configclass
 class Z120DOFFlatEnvCfg(BaseEnvCfg):
     kds = KDS
     kps = KPS
     reward = Z120DOFRewardCfg()
-    custom: TlibotCustomCfg = TlibotCustomCfg()
+    terminations = Z120DOFTerminationCfg()
     key_pos_list = KEY_POS_LIST
     anchor_name = ANCHOR_NAME
     def __post_init__(self):
@@ -166,6 +184,10 @@ class Z120DOFFlatEnvCfg(BaseEnvCfg):
         # Height scanner - asymmetric AC (actor is blind, critic has terrain info)
         self.scene.height_scanner.enable_height_scan = True
         self.scene.height_scanner.critic_only = True  # Actor is blind
+        # add*
+        self.domain_rand.events.push_robot.interval_range_s = (4.0, 8.0)
+        self.domain_rand.events.push_robot.params["velocity_range"] = {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}
+
 @configclass
 class Z120DOFFlatAgentCfg(BaseAgentCfg):
     def __post_init__(self):
