@@ -651,6 +651,10 @@ class Z1AmpSymEnv20DOF(BaseEnv):
         self.torso_lin_vel = math_utils.quat_apply_inverse(self.torso_quat, self.robot.data.body_link_lin_vel_w[:, self.torso_body_id[0], :3])
         self.torso_ang_vel = math_utils.quat_apply_inverse(self.torso_quat, self.robot.data.body_link_ang_vel_w[:, self.torso_body_id[0], :3])
         self.torso_euler_xyz = get_euler_xyz_tensor(self.torso_quat)
+
+        # AMP 多帧窗口：必须在 self.reset() 之前缓存本控制步结束时刻的 AMP 帧，
+        # 否则 done 的 env 会被 reset 掉，runner 拿到的 s_{t+1} 会是跨 episode 的混合帧。
+        self.amp_obs_after_step = self.get_amp_obs_for_expert_trans()
         
         self.episode_length_buf += 1
         self._compute_forward_obstacle_height()
@@ -675,6 +679,9 @@ class Z1AmpSymEnv20DOF(BaseEnv):
         self.extras["observations"] = {"critic": critic_obs,
                                        "hist_obs": hist_obs,
                                        "vel_obs": self.vel_buf.clone()}
+        self.extras["amp_obs_after_step"] = self.amp_obs_after_step
+        # reset 之后（新 episode 首帧）的 AMP 帧，供 runner 重置 done env 的历史窗口
+        self.extras["amp_obs_after_reset"] = self.get_amp_obs_for_expert_trans(joint_state_from_sim=True)
 
         return actor_obs, reward_buf, self.reset_buf, self.extras
 
@@ -745,15 +752,27 @@ class Z1AmpSymEnv20DOF(BaseEnv):
             pass
         return torch_utils.set_seed(seed)
     
-    def get_amp_obs_for_expert_trans(self):
-        """Gets amp obs from policy"""
-        joint_pos = self.dof_pos[:, [
+    def get_amp_obs_for_expert_trans(self, joint_state_from_sim: bool = False):
+        """Gets amp obs from policy
+
+        Args:
+            joint_state_from_sim: True 时关节位置/速度直接从 robot.data 读取。
+                用于 reset() 之后取新 episode 的首帧：此时 self.dof_pos / self.dof_vel
+                还是 reset 之前的缓存值，会和 robot.data 的 body 状态不同源。
+        """
+        if joint_state_from_sim:
+            src_pos = self.robot.data.joint_pos[:, self.dof_ids]
+            src_vel = self.robot.data.joint_vel[:, self.dof_ids]
+        else:
+            src_pos = self.dof_pos
+            src_vel = self.dof_vel
+        joint_pos = src_pos[:, [
             0, 1, 2, 3, 4, 5, 
             6, 7, 8, 9, 10, 11,
             12, 13, 14, 15, 
             16, 17, 18, 19
         ]]
-        joint_vel = self.dof_vel[:, [
+        joint_vel = src_vel[:, [
             0, 1, 2, 3, 4, 5, 
             6, 7, 8, 9, 10, 11,
             12, 13, 14, 15, 

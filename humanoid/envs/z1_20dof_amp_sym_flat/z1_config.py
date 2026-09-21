@@ -295,6 +295,7 @@ class Z120DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
 
                             ]
     amp_num_preload_transitions = 200000
+    amp_num_frames = 4
     # amp_discr_hidden_dims = [1024, 512, 256]
     amp_discr_hidden_dims = [1024, 512]
     min_normalized_std = [0.05] * 20

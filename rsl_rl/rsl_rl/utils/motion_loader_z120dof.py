@@ -61,13 +61,18 @@ class AMPLoader:
         preload_transitions=False,
         num_preload_transitions=1000000,
         motion_files=glob.glob("datasets/motion_amp_expert/*"),
+        num_frames=2,
     ):
         """Expert dataset provides AMP observations from Dog mocap dataset.
 
         time_between_frames: Amount of time in seconds between transition.
+        num_frames: AMP 判别器输入的参考帧数（>= 2）。2 即旧的「两帧 transition」行为。
         """
         self.device = device
         self.time_between_frames = time_between_frames
+        self.num_frames = int(num_frames)
+        if self.num_frames < 2:
+            raise ValueError(f"num_frames 至少为 2（当前 {self.num_frames}），否则无法构成时间窗口。")
         all_names_list = list(all_body_names)
         self.body_select = [all_names_list.index(n) for n in body_names]
         print(self.body_select)
@@ -101,6 +106,12 @@ class AMPLoader:
                 f"S_END_EFFECTOR_POS_SIZE={AMPLoader.S_END_EFFECTOR_POS_SIZE} 与 "
                 f"3 * len(amp_body_names)={3 * len(self.body_select)} 不一致。"
             )
+        # 单帧 AMP 观测宽度（窗口里每一帧的维度）
+        self.frame_dim = AMPLoader.S_END_POS_END_IDX - AMPLoader.S_JOINT_POSE_START_IDX
+        print(
+            f"[AMPLoader] AMP 参考帧数 num_frames={self.num_frames}, "
+            f"单帧宽度={self.frame_dim}, 判别器输入维度={self.frame_dim * self.num_frames}"
+        )
         # Values to store for each trajectory.
         self.trajectories = []
         self.trajectories_full = []
@@ -338,9 +349,9 @@ class AMPLoader:
             traj_idxs = self.weighted_traj_idx_sample_batch(num_preload_transitions)
             times = self.traj_time_sample_batch(traj_idxs)
 
-            self.preloaded_s = self.get_full_frame_at_time_batch(traj_idxs, times)
-            self.preloaded_s_next = self.get_full_frame_at_time_batch(traj_idxs, times + self.time_between_frames)
-            print("Finished preloading")
+            # 直接预加载扁平化的 num_frames 帧窗口：(M, num_frames * frame_dim)，帧顺序由旧到新
+            self.preloaded_s = self.get_frame_window_at_time_batch(traj_idxs, times + self.time_between_frames)
+            print(f"Finished preloading, preloaded_s shape = {tuple(self.preloaded_s.shape)}")
 
         self.all_trajectories_full = torch.vstack(self.trajectories_full)
         self.batch_idx = 0
@@ -361,11 +372,10 @@ class AMPLoader:
 
     def traj_time_sample_batch(self, traj_idxs):
         """Sample random time for multiple trajectories."""
-        subst = self.time_between_frames + self.trajectory_frame_durations[traj_idxs]
-
+        subst = (self.num_frames - 1) * self.time_between_frames + self.trajectory_frame_durations[traj_idxs]
         time_samples = self.trajectory_lens[traj_idxs] * np.random.uniform(size=len(traj_idxs)) - subst
-
-        return np.maximum(np.zeros_like(time_samples), time_samples)
+        time_samples = np.maximum(np.zeros_like(time_samples), time_samples)
+        return time_samples + (self.num_frames - 2) * self.time_between_frames
 
     def slerp(self, frame1, frame2, blend):
         return (1.0 - blend) * frame1 + blend * frame2
@@ -434,6 +444,19 @@ class AMPLoader:
         amp_blend = self.slerp(all_frame_amp_starts, all_frame_amp_ends, blend)
         return torch.cat([amp_blend], dim=-1)
 
+    def get_frame_window_at_time_batch(self, traj_idxs, times):
+        """取以 times 为「最后一帧」的连续 num_frames 帧窗口，扁平返回 (B, num_frames * frame_dim)。
+
+        各帧时刻依次为 times-(N-1)*dt, ..., times-dt, times（由旧到新）。
+        num_frames == 2 时结果与旧的 torch.cat([s, s_next], dim=-1) 逐元素相同。
+        """
+        frames = []
+        for k in range(self.num_frames):
+            t_k = times - (self.num_frames - 1 - k) * self.time_between_frames
+            frame = self.get_full_frame_at_time_batch(traj_idxs, t_k)
+            frames.append(frame[:, AMPLoader.S_JOINT_POSE_START_IDX : AMPLoader.S_END_POS_END_IDX])
+        return torch.cat(frames, dim=-1)
+
     def get_frame(self):
         """Returns random frame."""
         traj_idx = self.weighted_traj_idx_sample()
@@ -476,12 +499,18 @@ class AMPLoader:
         return torch.cat([blend_joint_q, blend_joints_vel])
 
     def feed_forward_generator(self, num_mini_batch, mini_batch_size):
-        """Generates a batch of AMP transitions."""
+        """Generates a batch of AMP transitions.
+
+        返回 (s, s_next)。preloaded_s 现在是扁平化的 num_frames 帧窗口，这里取窗口的
+        首帧与末帧；num_frames == 2 时与旧实现逐元素相同。
+        """
+        fd = self.frame_dim
         for _ in range(num_mini_batch):
             if self.preload_transitions:
                 idxs = np.random.choice(self.preloaded_s.shape[0], size=mini_batch_size)
-                s = self.preloaded_s[idxs, AMPLoader.S_JOINT_POSE_START_IDX : AMPLoader.S_END_POS_END_IDX]
-                s_next = self.preloaded_s_next[idxs, AMPLoader.S_JOINT_POSE_START_IDX : AMPLoader.S_END_POS_END_IDX]
+                window = self.preloaded_s[idxs]
+                s = window[:, :fd]
+                s_next = window[:, (self.num_frames - 1) * fd : self.num_frames * fd]
             else:
                 s, s_next = [], []
                 traj_idxs = self.weighted_traj_idx_sample_batch(mini_batch_size)
@@ -492,6 +521,21 @@ class AMPLoader:
                 s = torch.vstack(s)
                 s_next = torch.vstack(s_next)
             yield s, s_next
+
+    def feed_forward_generator_window(self, num_mini_batch, mini_batch_size):
+        """Generates a batch of AMP windows.
+
+        每次产出一个 (mini_batch_size, num_frames * frame_dim) 的扁平窗口张量。
+        """
+        for _ in range(num_mini_batch):
+            if self.preload_transitions:
+                idxs = np.random.choice(self.preloaded_s.shape[0], size=mini_batch_size)
+                window = self.preloaded_s[idxs]
+            else:
+                traj_idxs = self.weighted_traj_idx_sample_batch(mini_batch_size)
+                times = self.traj_time_sample_batch(traj_idxs)
+                window = self.get_frame_window_at_time_batch(traj_idxs, times + self.time_between_frames)
+            yield window
 
     @property
     def observation_dim(self):

@@ -106,6 +106,11 @@ class AmpOnPolicyRunner:
             # this is used by the symmetry function for handling different observation terms
             self.alg_cfg["symmetry_cfg"]["_env"] = env
 
+        # AMP 参考帧数：判别器输入 = amp_num_frames 个连续帧的拼接。
+        # 2 即旧的「两帧 transition」行为（等价锚点）；3/4/6 等可任意设定，但改变后旧 checkpoint 不可用。
+        self.amp_num_frames = int(train_cfg.get("amp_num_frames", 2))
+        if self.amp_num_frames < 2:
+            raise ValueError(f"amp_num_frames 至少为 2，当前为 {self.amp_num_frames}。")
         # init amp loader
         amp_data = AMPLoader(
             device,
@@ -116,14 +121,19 @@ class AmpOnPolicyRunner:
             anchor_name=train_cfg["amp_anchor_name"], 
             num_preload_transitions=train_cfg["amp_num_preload_transitions"],
             motion_files=train_cfg["amp_motion_files"],
+            num_frames=self.amp_num_frames,
         )
+        # 供 learn() 使用（learn 里无法访问 __init__ 的局部变量）
+        self.amp_data = amp_data
+        self.amp_frame_dim = amp_data.observation_dim
         amp_normalizer = Normalizer(amp_data.observation_dim)
         discriminator = Discriminator(
-            amp_data.observation_dim * 2,
+            amp_data.observation_dim * self.amp_num_frames,
             train_cfg["amp_reward_coef"],
             train_cfg["amp_discr_hidden_dims"],
             device,
             train_cfg["amp_task_reward_lerp"],
+            num_frames=self.amp_num_frames,
         ).to(self.device)
         min_std = torch.zeros(len(train_cfg["min_normalized_std"]), device=self.device, requires_grad=False)
 
@@ -215,6 +225,10 @@ class AmpOnPolicyRunner:
         obs, privileged_obs, amp_obs = obs.to(self.device), privileged_obs.to(self.device), amp_obs.to(self.device)
         self.train_mode()  # switch to train mode (for dropout for example)
 
+        # AMP 多帧窗口：每个 env 保存最近 (num_frames-1) 帧，用于拼出 [..., s_t, s_{t+1}]。
+        # 窗口末帧 s_{t+1} 由 infos["amp_obs_after_step"] 提供（env 在 reset 之前缓存的帧）。
+        self.amp_frame_hist = amp_obs.unsqueeze(1).repeat(1, self.amp_num_frames - 1, 1).clone()
+
         # Book keeping
         ep_infos = []
         rewbuffer = deque(maxlen=100)
@@ -251,7 +265,10 @@ class AmpOnPolicyRunner:
                     actions = self.alg.act(obs, privileged_obs, amp_obs)
                     # Step the environment
                     obs, rewards, dones, infos = self.env.step(actions.to(self.env.device))
-                    next_amp_obs = self.env.get_amp_obs_for_expert_trans()
+                    # AMP：优先取 env 在 reset 之前缓存的「本控制步结束时刻」的一致帧作为 s_{t+1}；
+                    next_amp_obs = infos.get("amp_obs_after_step")
+                    if next_amp_obs is None:
+                        next_amp_obs = self.env.get_amp_obs_for_expert_trans()
                     # Move to device
                     obs, rewards, dones, next_amp_obs = (
                         obs.to(self.device),
@@ -268,20 +285,31 @@ class AmpOnPolicyRunner:
                     else:
                         privileged_obs = obs
 
-                    # Account for terminal state transitions
-                    next_amp_obs_with_term = torch.clone(next_amp_obs)
-                    reset_env_ids = self.env.reset_env_ids
-                    terminal_amp_states = self.env.get_amp_obs_for_expert_trans()[reset_env_ids]
-                    next_amp_obs_with_term[reset_env_ids] = terminal_amp_states
+                    # 拼出 num_frames 帧窗口（由旧到新）：[..., s_t, s_{t+1}]
+                    amp_window = torch.cat([self.amp_frame_hist, next_amp_obs.unsqueeze(1)], dim=1)
 
-                    rewards, amp_d, step_style_reward = self.alg.discriminator.predict_amp_reward(
-                        amp_obs, next_amp_obs_with_term, rewards, normalizer=self.alg.amp_normalizer
+                    rewards, amp_d, step_style_reward = self.alg.discriminator.predict_style_reward(
+                        amp_window, rewards, normalizer=self.alg.amp_normalizer
                     )
                     # AMP style reward（纯判别器奖励，未与 task reward 混合）仅用于日志
                     amp_style_sum += step_style_reward.mean().item()
                     amp_style_steps += 1
-                    amp_obs = torch.clone(next_amp_obs)
-                    self.alg.process_env_step(rewards, dones, infos, next_amp_obs_with_term)
+
+                    # 更新历史窗口；done 的 env 用新 episode 的首帧重置，避免跨 episode 拼窗
+                    reset_env_ids = self.env.reset_env_ids
+                    self.amp_frame_hist = torch.roll(self.amp_frame_hist, shifts=-1, dims=1)
+                    self.amp_frame_hist[:, -1] = next_amp_obs
+                    if len(reset_env_ids) > 0:
+                        first_amp_obs = infos.get("amp_obs_after_reset")
+                        if first_amp_obs is None:
+                            first_amp_obs = self.env.get_amp_obs_for_expert_trans()
+                        first_amp_obs = first_amp_obs[reset_env_ids].to(self.device)
+                        self.amp_frame_hist[reset_env_ids] = first_amp_obs.unsqueeze(1).repeat(
+                            1, self.amp_num_frames - 1, 1
+                        )
+
+                    amp_obs = next_amp_obs
+                    self.alg.process_env_step(rewards, dones, infos, amp_window)
 
                     # Extract intrinsic rewards (only for logging)
                     intrinsic_rewards = self.alg.intrinsic_rewards if self.alg.rnd else None

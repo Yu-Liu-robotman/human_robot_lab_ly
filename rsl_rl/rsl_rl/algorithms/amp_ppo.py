@@ -114,7 +114,10 @@ class AMPPPO:
         self.discriminator = discriminator
         self.discriminator.to(self.device)
         self.amp_transition = RolloutStorage.Transition()
-        self.amp_storage = ReplayBuffer(discriminator.input_dim // 2, amp_replay_buffer_size, device)
+        # 每条样本 = 一个 num_frames 帧的时间窗口（扁平的 num_frames * obs_dim）
+        self.amp_num_frames = getattr(discriminator, "num_frames", 2)
+        self.amp_obs_dim = getattr(discriminator, "obs_dim", discriminator.input_dim // max(self.amp_num_frames, 1))
+        self.amp_storage = ReplayBuffer(discriminator.input_dim, amp_replay_buffer_size, device, store_next=False)
         self.amp_data = amp_data
         self.amp_normalizer = amp_normalizer
 
@@ -207,7 +210,9 @@ class AMPPPO:
             )
 
         # record the transition
-        self.amp_storage.insert(self.amp_transition.observations, amp_obs)
+        if amp_obs.dim() == 3:
+            amp_obs = amp_obs.reshape(amp_obs.shape[0], -1)
+        self.amp_storage.insert(amp_obs)
         self.storage.add_transitions(self.transition)
         self.transition.clear()
         self.amp_transition.clear()
@@ -219,6 +224,20 @@ class AMPPPO:
         self.storage.compute_returns(
             last_values, self.gamma, self.lam, normalize_advantage=not self.normalize_advantage_per_mini_batch
         )
+
+    def _split_amp_window(self, window):
+        """把扁平的 (B, num_frames * obs_dim) 窗口拆成 (B, num_frames, obs_dim)，便于逐帧归一化。"""
+        if window.dim() == 3:
+            return window
+        return window.reshape(window.shape[0], self.amp_num_frames, self.amp_obs_dim)
+
+    def _normalize_amp_window(self, window):
+        """逐帧归一化 (B, num_frames, obs_dim)，返回同形状。"""
+        if self.amp_normalizer is None:
+            return window
+        b, n, d = window.shape
+        flat = self.amp_normalizer.normalize_torch(window.reshape(b * n, d), self.device)
+        return flat.reshape(b, n, d)
 
     def update(self):  # noqa: C901
         mean_value_loss = 0
@@ -245,11 +264,11 @@ class AMPPPO:
         else:
             generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
 
-        amp_policy_generator = self.amp_storage.feed_forward_generator(
+        amp_policy_generator = self.amp_storage.window_generator(
             self.num_learning_epochs * self.num_mini_batches,
             self.storage.num_envs * self.storage.num_transitions_per_env // self.num_mini_batches,
         )
-        amp_expert_generator = self.amp_data.feed_forward_generator(
+        amp_expert_generator = self.amp_data.feed_forward_generator_window(
             self.num_learning_epochs * self.num_mini_batches,
             self.storage.num_envs * self.storage.num_transitions_per_env // self.num_mini_batches,
         )  #放弃使用skill采样，恢复原本amp采样
@@ -418,21 +437,19 @@ class AMPPPO:
                 mseloss = torch.nn.MSELoss()
                 rnd_loss = mseloss(predicted_embedding, target_embedding)
 
-            # Discriminator loss.
-            policy_state, policy_next_state = sample_amp_policy
-            expert_state, expert_next_state = sample_amp_expert
-            if self.amp_normalizer is not None:
-                with torch.no_grad():
-                    policy_state = self.amp_normalizer.normalize_torch(policy_state, self.device)
-                    policy_next_state = self.amp_normalizer.normalize_torch(policy_next_state, self.device)
-                    expert_state = self.amp_normalizer.normalize_torch(expert_state, self.device)
-                    expert_next_state = self.amp_normalizer.normalize_torch(expert_next_state, self.device)
-            policy_d = self.discriminator(torch.cat([policy_state, policy_next_state], dim=-1))
-            expert_d = self.discriminator(torch.cat([expert_state, expert_next_state], dim=-1))
+            # Discriminator loss. 单条样本 = 一个 num_frames 帧的窗口
+            policy_window = self._split_amp_window(sample_amp_policy)
+            expert_window = self._split_amp_window(sample_amp_expert)
+            with torch.no_grad():
+                policy_window = self._normalize_amp_window(policy_window)
+                expert_window = self._normalize_amp_window(expert_window)
+            policy_d = self.discriminator(policy_window.reshape(policy_window.shape[0], -1))
+            expert_d = self.discriminator(expert_window.reshape(expert_window.shape[0], -1))
             expert_loss = torch.nn.MSELoss()(expert_d, torch.ones(expert_d.size(), device=self.device))
             policy_loss = torch.nn.MSELoss()(policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
             amp_loss = 0.5 * (expert_loss + policy_loss)
-            grad_pen_loss = self.discriminator.compute_grad_pen(*sample_amp_expert, lambda_=10)
+            # 梯度惩罚沿用旧口径：在「未归一化」的原始专家窗口上求梯度（N=2 时与旧的 cat([s, s_next]) 相同）
+            grad_pen_loss = self.discriminator.compute_grad_pen(sample_amp_expert, lambda_=10)
             loss += self.amploss_coef * amp_loss + self.amploss_coef * grad_pen_loss
 
             # Compute the gradients
@@ -457,8 +474,8 @@ class AMPPPO:
                 self.rnd_optimizer.step()
 
             if self.amp_normalizer is not None:
-                self.amp_normalizer.update(policy_state)
-                self.amp_normalizer.update(expert_state)
+                self.amp_normalizer.update(policy_window.reshape(-1, self.amp_obs_dim))
+                self.amp_normalizer.update(expert_window.reshape(-1, self.amp_obs_dim))
 
             # Store the losses
             mean_value_loss += value_loss.item()
