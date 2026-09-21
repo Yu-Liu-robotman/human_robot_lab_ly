@@ -61,3 +61,18 @@ task_registry.register("z1_12dof_rough", T2proEnv12DOF, T2proRoughEnvCfg(), T2pr
 task_registry.register("z1_12dof_amp_flat", T2proEnv12DOF, T2proAmpFlatEnvCfg(), T2proAmpFlatAgentCfg())
 task_registry.register("z1_12dof_amp_sym_flat", T2proEnv12DOF, T2proAmpFlatSymEnvCfg(), T2proAmpFlatSymAgentCfg())
 task_registry.register("z1_12dof_amp_dwaq_flat", T2proEnv12DOF, T2proAmpDWAQFlatEnvCfg(), T2proAmpDWAQFlatAgentCfg())
+
+
+from humanoid.envs.z1_20dof_amp_sym_flat.z1_config import (
+    Z120DOFFlatAgentCfg,
+    Z120DOFFlatEnvCfg,
+    Z120DOFAmpFlatEnvCfg,
+    Z120DOFAmpFlatAgentCfg,
+    Z120DOFAmpFlatSymEnvCfg,
+    Z120DOFAmpFlatSymAgentCfg,
+)
+from humanoid.envs.z1_20dof_amp_sym_flat.z1_env import Z1AmpSymEnv20DOF
+
+task_registry.register("z1_20dof_flat", Z1AmpSymEnv20DOF, Z120DOFFlatEnvCfg(), Z120DOFFlatAgentCfg())
+task_registry.register("z1_20dof_amp_flat", Z1AmpSymEnv20DOF, Z120DOFAmpFlatEnvCfg(), Z120DOFAmpFlatAgentCfg())
+task_registry.register("z1_20dof_amp_sym_flat", Z1AmpSymEnv20DOF, Z120DOFAmpFlatSymEnvCfg(), Z120DOFAmpFlatSymAgentCfg())

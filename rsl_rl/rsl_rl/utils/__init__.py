@@ -5,7 +5,8 @@
 
 """Helper functions."""
 
-from .motion_loader import AMPLoader
+from .motion_loader_z120dof import AMPLoader
+
 from .utils import (
     Normalizer,
     resolve_nn_activation,

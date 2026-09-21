@@ -11,6 +11,15 @@ from pathlib import Path
 import numpy as np
 from isaaclab.app import AppLauncher
 
+"""
+python3 humanoid/scripts/tools/bath_csv_to_npz.py \
+    --input_dir /home/user/LY/human_z1_lab/huma_robot_lab/humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/gmr/csv \
+    --output_dir /home/user/LY/human_z1_lab/huma_robot_lab/humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof \
+    --input_fps 30 \
+    --output_fps 50 \
+    --robot z120dof
+"""
+
 parser = argparse.ArgumentParser(description="Batch replay motion csv files.")
 parser.add_argument("--input_dir", type=str, required=True)
 parser.add_argument("--output_dir", type=str, default=None)
@@ -18,7 +27,7 @@ parser.add_argument("--recursive", action="store_true")
 parser.add_argument("--overwrite", action="store_true")
 parser.add_argument("--input_fps", type=int, default=30)
 parser.add_argument("--output_fps", type=int, default=50)
-
+parser.add_argument("--robot", type=str, default="z120dof")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -35,7 +44,10 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import axis_angle_from_quat, quat_conjugate, quat_mul, quat_slerp
 
-from humanoid.assets.z1.z1 import T2PRO as ROBOT_CFG
+if args_cli.robot == "z1":
+    from humanoid.assets.z1.z1 import T2PRO as ROBOT_CFG
+elif args_cli.robot == "z120dof":
+    from humanoid.assets.z1.z1_20dof import Z120DOF as ROBOT_CFG
 
 
 @configclass
