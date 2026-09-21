@@ -99,8 +99,6 @@ class Z120DOFRewardCfg(RewardCfg):
         func=z1_mdp.stand_still_joint_deviation_l1,
         weight=-0.1,
         params={
-            "command_name": "base_velocity",
-            "use_stand_mask": True,
             "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw_joint", ".*_hip_roll_joint"]),
         },
     )
@@ -109,8 +107,6 @@ class Z120DOFRewardCfg(RewardCfg):
         func=z1_mdp.stand_still_joint_deviation_l1,
         weight=-0.05,
         params={
-            "command_name": "base_velocity",
-            "use_stand_mask": True,
             "asset_cfg": SceneEntityCfg(
                 "robot",
                 joint_names=[
@@ -271,7 +267,7 @@ class Z120DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     load_checkpoint = "model_.*.pt"
 
     # amp parameter
-    amp_reward_coef = 1.0
+    amp_reward_coef = 0.02 * 6
     amp_task_reward_lerp = 0.5
 
     amp_motion_files = [
