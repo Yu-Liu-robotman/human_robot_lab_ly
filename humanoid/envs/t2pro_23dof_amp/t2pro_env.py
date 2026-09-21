@@ -692,23 +692,47 @@ class T2proEnv23DOF(BaseEnv):
         return actor_obs, reward_buf, self.reset_buf, self.extras
 
     def check_reset(self):
-        net_contact_forces = self.contact_sensor.data.net_forces_w_history
-        torso_position = self.robot.data.root_pos_w[:, :3]
-        torso_position = torso_position[:, 2].view(-1, 1)
-        # self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
-        reset_buf = torch.any(torso_position < 0.2, dim=1)
+        # net_contact_forces = self.contact_sensor.data.net_forces_w_history
+        # torso_position = self.robot.data.root_pos_w[:, :3]
+        # torso_position = torso_position[:, 2].view(-1, 1)
+        # # self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
+        # reset_buf = torch.any(torso_position < 0.2, dim=1)
 
-        reset_buf |= torch.any(
+        # reset_buf |= torch.any(
+        #     torch.max(
+        #         torch.norm(
+        #             net_contact_forces[:, :, self.termination_contact_cfg.body_ids],
+        #             dim=-1,
+        #         ),
+        #         dim=1,
+        #     )[0]
+        #     > 1.0,
+        #     dim=1,
+        # )
+        net_contact_forces = self.contact_sensor.data.net_forces_w_history
+
+        # 1. Root height
+        root_height = self.robot.data.root_pos_w[:, 2]
+        fallen_height = root_height < 0.4
+
+        # 2. Orientation
+        projected_gravity = self.robot.data.projected_gravity_b
+        fallen_orientation = projected_gravity[:, 2] > -0.5
+
+        # 3. Base / torso contact
+        fallen_contact = torch.any(
             torch.max(
                 torch.norm(
                     net_contact_forces[:, :, self.termination_contact_cfg.body_ids],
                     dim=-1,
                 ),
                 dim=1,
-            )[0]
-            > 1.0,
+            )[0] > 1.0,
             dim=1,
         )
+
+        reset_buf = fallen_height | fallen_orientation | fallen_contact
+        
         time_out_buf = self.episode_length_buf >= self.max_episode_length
         reset_buf |= time_out_buf
         return reset_buf, time_out_buf
