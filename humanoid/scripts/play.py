@@ -57,68 +57,10 @@ def policy_exported_param(env):
     obs_index_imu_torso_linearacc = env.obs_index_imu_torso_linearacc
     
     default_joint_pos = []
-    dof_names = []
     for i in range(env.default_dof_pos.shape[1]):
         default_joint_pos.append(env.default_dof_pos[0, i].item())
-    for name in env.dof_names:
-        if name == "leg_left_hip_yaw_joint":
-            dof_names.append("joint_L_hipY")
-        if name == "leg_left_hip_roll_joint":
-            dof_names.append("joint_L_hipR")
-        if name == "leg_left_hip_pitch_joint":
-            dof_names.append("joint_L_hipP")
-        if name == "leg_left_knee_joint":
-            dof_names.append("joint_L_knee")
-        if name == "leg_left_ankle_roll_joint":
-            dof_names.append("joint_L_ankleR")
-        if name == "leg_left_ankle_pitch_joint":
-            dof_names.append("joint_L_ankleP")
-        if name == "leg_right_hip_yaw_joint":
-            dof_names.append("joint_R_hipY")
-        if name == "leg_right_hip_roll_joint":
-            dof_names.append("joint_R_hipR")
-        if name == "leg_right_hip_pitch_joint":
-            dof_names.append("joint_R_hipP")
-        if name == "leg_right_knee_joint":
-            dof_names.append("joint_R_knee")
-        if name == "leg_right_ankle_roll_joint":
-            dof_names.append("joint_R_ankleR")
-        if name == "leg_right_ankle_pitch_joint":
-            dof_names.append("joint_R_ankleP")
-        if name == "torso_yaw_joint":
-            dof_names.append("joint_torsoy1")
-        if name == "torso_roll_joint":
-            dof_names.append("joint_torsor")
-        if name == "torso_pitch_joint":
-            dof_names.append("joint_torsop")
-        if name == "arm_left_shoulder_pitch_joint":
-            dof_names.append("joint_arm_left_humeralp")
-        if name == "arm_left_shoulder_roll_joint":
-            dof_names.append("joint_arm_left_humeralr")
-        if name == "arm_left_shoulder_yaw_joint":
-            dof_names.append("joint_arm_left_humeraly")
-        if name == "arm_left_elbow_joint":
-            dof_names.append("joint_arm_left_elbow")
-        if name == "arm_left_wrist_roll_joint":
-            dof_names.append("joint_arm_left_wristr")
-        if name == "arm_left_wrist_pitch_joint":
-            dof_names.append("joint_arm_left_wristp")
-        if name == "arm_left_wrist_yaw_joint":
-            dof_names.append("joint_arm_left_wristy")
-        if name == "arm_right_shoulder_pitch_joint":
-            dof_names.append("joint_arm_right_humeralp")
-        if name == "arm_right_shoulder_roll_joint":
-            dof_names.append("joint_arm_right_humeralr")
-        if name == "arm_right_shoulder_yaw_joint":
-            dof_names.append("joint_arm_right_humeraly")
-        if name == "arm_right_elbow_joint":
-            dof_names.append("joint_arm_right_elbow")
-        if name == "arm_right_wrist_roll_joint":
-            dof_names.append("joint_arm_right_wristr")
-        if name == "arm_right_wrist_pitch_joint":
-            dof_names.append("joint_arm_right_wristp")
-        if name == "arm_right_wrist_yaw_joint":
-            dof_names.append("joint_arm_right_wristy")
+    # 直接输出 env.dof_names 的原始关节名（IsaacLab 命名），不再映射为 joint_L_hipY 之类的 SDK 别名
+    dof_names = list(env.dof_names)
        
     exp_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if env.cfg.experiment_name == "t2pro_20dof_amp_dwaq_flat" or env.cfg.experiment_name == "t2pro_12dof_amp_dwaq_flat":

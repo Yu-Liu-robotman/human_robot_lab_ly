@@ -89,15 +89,16 @@ class Z120DOFRewardCfg(RewardCfg):
             "stand_cmd": True,
         },
     )
+
     ankle_orientation_l2 = RewTerm(
         func=mdp.feet_yaw_l2, params={"asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll.*")}, 
-        weight=-1.0
+        weight=-0.35
     )
     ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
 
     joint_deviation_hip = RewTerm(
         func=z1_mdp.stand_still_joint_deviation_l1,
-        weight=-0.1,
+        weight=-0.5,
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw_joint", ".*_hip_roll_joint"]),
         },
@@ -105,7 +106,7 @@ class Z120DOFRewardCfg(RewardCfg):
 
     joint_deviation_arms = RewTerm(
         func=z1_mdp.stand_still_joint_deviation_l1,
-        weight=-0.05,
+        weight=-0.25,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot",
@@ -144,7 +145,33 @@ class Z120DOFRewardCfg(RewardCfg):
             "maximum_forward_speed": 0.45,
         },
     )
-    
+    feet_yaw_alignment = RewTerm(
+        func=z1_mdp.feet_yaw_alignment,
+        weight=-1.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+            "lin_vel_y_eps": 0.05,
+            "ang_vel_z_eps": 0.05,
+            "contact_force_threshold": 5.0,
+        },
+    )
+    hip_yaw_deviation_walk = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-0.03,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw_joint"])},
+    )
+    feet_yaw_pivot = RewTerm(
+        func=z1_mdp.feet_yaw_vel_in_contact,
+        weight=-0.15,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+            "contact_force_threshold": 5.0,
+            "lin_vel_y_eps": 0.05,
+            "ang_vel_z_eps": 0.05,
+        },
+    )    
 @configclass
 class Z120DOFTerminationCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
@@ -295,7 +322,7 @@ class Z120DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
 
                             ]
     amp_num_preload_transitions = 200000
-    amp_num_frames = 4
+    amp_num_frames = 5
     # amp_discr_hidden_dims = [1024, 512, 256]
     amp_discr_hidden_dims = [1024, 512]
     min_normalized_std = [0.05] * 20

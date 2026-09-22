@@ -249,7 +249,8 @@ class HumaRobotSimRos(Node):
             print(f'关节 {i}: {joint_name}\r')
             if i > 0:
                 joint_names.append(joint_name)
-        dof_names = []
+        # name_map 仅用于兼容旧版 params.yaml（里面存的是 joint_L_hipY 这类 SDK 别名）。
+        # play.py 现在直接导出原始关节名（= mujoco 关节名），命中不到 map 时按原样使用。
         name_map = {
             "joint_L_hipY": "leg_left_hip_yaw_joint",
             "joint_L_hipR": "leg_left_hip_roll_joint",
@@ -280,13 +281,18 @@ class HumaRobotSimRos(Node):
             "joint_arm_right_elbow": "arm_right_elbow_joint",
         }
 
-        dof_names = []
-
-        for name in param["dof_names"]:
-            if name in name_map:
-                dof_names.append(name_map[name])
+        dof_names = [name_map.get(name, name) for name in param["dof_names"]]
         dof_ids = self.find_joint_indices(joint_names, dof_names)
-        print(dof_ids)
+        print(f'[INFO] params.yaml dof_names -> mujoco dof_ids: {dof_ids}')
+        # 早点报错：否则会在后面 kps[dof_ids] = ... 处抛一个难以理解的 numpy 形状错误
+        if len(dof_ids) != len(param["dof_names"]):
+            raise ValueError(
+                f'关节名映射失败：params.yaml 里有 {len(param["dof_names"])} 个关节，'
+                f'但只在 mujoco 模型里按顺序匹配到 {len(dof_ids)} 个。\n'
+                f'  params.yaml dof_names = {param["dof_names"]}\n'
+                f'  mujoco joint_names  = {joint_names}\n'
+                '请检查两者命名与顺序是否一致。'
+            )
         # viewer = mujoco_viewer.MujocoViewer(model, data)
         viewer = mujoco.viewer.launch_passive(model, data)
         target_q = np.zeros((param['num_actions']), dtype=np.double)
@@ -654,6 +660,41 @@ class HumaRobotSimRos(Node):
         return error_state
 
 
+def find_latest_run(experiment_name):
+    """未指定 --load_run 时，自动挑选最新一次训练 run。
+
+    run 目录名是训练启动的时间戳（%Y-%m-%d_%H-%M-%S，可能带 _run_name 后缀），
+    所以字典序就是时间序。优先选已经导出过的 run（存在 exported/params.yaml），
+    否则退回最新的 run 并提示需要先跑 play.py。
+    """
+    log_root = os.path.join(workspace_dir, 'logs', experiment_name)
+    if not os.path.isdir(log_root):
+        raise FileNotFoundError(
+            f'找不到 {log_root}。请确认 --experiment_name 是否正确，或用 --load_run 显式指定。'
+        )
+    run_dirs = sorted(
+        d for d in os.listdir(log_root)
+        if os.path.isdir(os.path.join(log_root, d)) and d[0].isdigit()
+    )
+    if not run_dirs:
+        raise FileNotFoundError(f'{log_root} 下没有训练 run 目录，请用 --load_run 显式指定。')
+
+    exported = [
+        d for d in run_dirs
+        if os.path.isfile(os.path.join(log_root, d, 'exported', 'params.yaml'))
+    ]
+    if exported:
+        latest = exported[-1]
+        print(f'[INFO] 未指定 --load_run，自动选用最新已导出的 run: {latest}')
+    else:
+        latest = run_dirs[-1]
+        print(
+            f'[INFO] 未指定 --load_run，自动选用最新 run: {latest}'
+            '（该 run 还没导出过，请先跑 play.py 生成 exported/）'
+        )
+    return latest
+
+
 if __name__ == '__main__':
     rclpy.init(args=None)
     import argparse
@@ -675,7 +716,8 @@ if __name__ == '__main__':
     if args.load_run is not None:
         load_run = args.load_run
     else:
-        load_run = '2026-01-25_15-59-02'
+        # 未指定则自动选最新一次训练（优先选已经导出过的）
+        load_run = find_latest_run(experiment_name)
 
     # use config file default(load_cfg = True)
     if args.use_local_cfg:

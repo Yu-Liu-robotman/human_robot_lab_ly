@@ -1,0 +1,126 @@
+================================================================================
+huma_robot_lab / z1_20dof_amp_sym_flat  改动日志
+分支: liuyu-z1-20dof        日期: 2026-09-21
+================================================================================
+
+【一】AMP 参考帧数可配置：两帧 → N 帧时间窗口        (已提交: 0bbdaa4 添加参考帧)
+--------------------------------------------------------------------------------
+目标：两帧 transition 的模仿信息不足，需要更长的参考时间窗口。
+
+做法：把「当前帧 + 下一帧」这一对，推广成 N 个连续帧的窗口
+        W = [ s_(t-N+2), ..., s_t, s_(t+1) ]        （由旧到新）
+
+  * N == 2 时 W 逐元素等于原来的 cat([state, next_state])，也就是旧行为，
+    所以这是一个可验证的等价锚点（已验证，见文末）。
+  * N 任意可设，判别器输入维度 = 单帧宽度(76) × N。
+
+开关：
+  humanoid/envs/z1_20dof_amp_sym_flat/z1_config.py
+      amp_num_frames = 5          # 当前值；<=2 即旧行为
+  * 其它任务（t2pro_*）不带该字段，自动回落到 2，完全不受影响。
+  * 改动帧数会改变判别器输入维度，旧 checkpoint 不可复用，必须从头训练。
+
+涉及文件：
+  rsl_rl/utils/motion_loader_z120dof.py   窗口构造 + 采样余量 + 新增窗口生成器
+  rsl_rl/storage/replay_buffer.py         支持单张量窗口模式(store_next=False)
+  rsl_rl/modules/discriminator.py         num_frames / obs_dim、逐帧归一化
+  rsl_rl/algorithms/amp_ppo.py            缓冲/生成器/损失改走窗口
+  rsl_rl/runners/amp_on_policy_runner.py  per-env 历史窗口 amp_frame_hist
+  humanoid/envs/.../z1_env.py             缓存 reset 前/后的 AMP 帧并经 extras 暴露
+
+优化点：归一化器保持「逐帧」维度（B,N,D → reshape B*N,D），与 legged_lab 一致，
+        不因窗口变长而改变归一化语义。
+
+
+【二】行走「转脚 / 内外八」奖励                      (未提交，本次)
+--------------------------------------------------------------------------------
+诊断出两个结构性缺口：
+
+  (1) 转脚完全没被约束。
+      feet_slide 只看脚部**线**速度；绕着踝关节原地拧脚时脚部原点几乎不移动，
+      所以拧脚这件事原奖励根本看不到。
+
+  (2) 内外八在行走中无人约束。
+      joint_deviation_hip 用的是 stand_still_joint_deviation_l1，该项只在
+      ||command|| <= 0.06（站立）时启用 —— 行走时这一项恒为 0。
+
+新增/调整的奖励项：
+
+  feet_yaw_pivot            weight = -0.15   【新增，治转脚】
+      支撑相脚体的**世界系**偏航角速度惩罚（L1）。
+      用绝对角速度而不是「相对躯干」：脚踩实不拧时世界系偏航角速度约为 0，
+      即使骨盆在转动（骨盆转、脚不转是正常步态），不会被误罚。
+      仅「接触 + 近似直行 + 行走」时生效；转向/横移时脚本来就必须碾地，不罚。
+
+  feet_yaw_alignment        weight = -1.0    【启用，治内外八】
+      仓库里原本已写好、但从未被引用的函数。惩罚支撑相脚相对躯干偏航角的偏离
+      （就是内外八角本身），只在接触 + 近似直行时生效，
+      摆动相/转向/横移自动关闭，不会和自然步态打架。
+
+  hip_yaw_deviation_walk    weight = -0.03   【新增，治内外八的成因】
+      行走时 hip_yaw 的关节偏离正则（不受站立门控）。
+      注意：hip_yaw 在参考动作里本来就随步态摆动，权重必须小，否则会和 AMP 打架。
+
+  ankle_orientation_l2      weight = -0.35   【由 -1.0 下调】
+      原 feet_yaw_l2 是**全相位**（含摆动相）的脚-骨盆偏航角惩罚。
+      摆动时脚本来就会自然转动，且它与上面的 feet_yaw_alignment 重复计数，
+      因此下调，把「该罚的相」交给 stance-only 的项。
+
+量级参考（weight=-1.0，双脚支撑、直行）：
+      内外八  5° -> 每步 0.015      10° -> 0.061
+      内外八 15° -> 每步 0.137      20° -> 0.244      30° -> 0.548
+  weight=-0.05 时转脚（双脚接触，L1 求和）：
+      0.2 rad/s -> 每步 -0.020      0.5 -> -0.050
+      1.0 rad/s -> 每步 -0.100      2.0 -> -0.200
+
+
+【三】顺带修掉的两个真 bug
+--------------------------------------------------------------------------------
+  1) 终止帧的 patch 是空操作（AMP runner）
+        terminal_amp_states = env.get_amp_obs_for_expert_trans()[reset_env_ids]
+        next_amp_obs_with_term[reset_env_ids] = terminal_amp_states
+     两次调用之间 env 状态没变，等于没赋值；而 env 在 step() 末尾已 reset()，
+     于是 done 的 env 拿到的是「reset 后的 body 位置 + reset 前的关节角」拼出的
+     假帧，还会被写进 replay buffer。
+     → 改为 env 在 reset() **之前**缓存该帧，经 extras["amp_obs_after_step"] 给出。
+
+  2) 专家数据集时间采样余量不足（N > 2 时越界）
+     原 subst = dt + frame_dur 只留 1 帧余量。窗口向前延伸后会取到负时间，
+     而负索引**不报错**，会静默绕到轨迹末尾（数据全错，训练照跑）。
+     → 改为 tau = (N-2)·dt + max(0, L·U - ((N-1)·dt + frame_dur))，
+       N == 2 时与原式逐元素相同。
+
+
+【四】校验情况
+--------------------------------------------------------------------------------
+  1) py_compile                      所有改动文件通过
+  2) 未定义名静态检查                 0 处（自建 symtable 检查器，
+                                     可捕捉「跨作用域用错变量」这类 py_compile 查不出的错）
+  3) N 帧窗口等价性与边界              ALL PASS（23 项）
+       * N=2 窗口 == cat([s, s_next])（20 组随机时刻，逐元素相等）
+       * N=3/4/6 窗口 == 连续帧逐帧取值，帧序由旧到新
+       * 2 万组采样 × N∈{2,3,4,6,10}：窗口时刻恒在 [0, traj_len] 内，无越界
+  4) 判别器 / ReplayBuffer             ALL PASS（20 项）
+       * predict_style_reward(N=2) 与旧 predict_amp_reward 的 reward/d/style 全等
+       * 逐帧归一化 == 旧的分开归一化后拼接
+       * compute_grad_pen 两种调用方式等价；第 3 帧确实参与
+       * ReplayBuffer 新旧两种模式均正确
+  5) feet_yaw_alignment 数学正确性      ALL PASS（12 项，含 340° 跨 ±180° 的回绕）
+  6) feet_yaw_vel_in_contact 正确性     ALL PASS（含「不读 root_ang_vel_w」的结构断言）
+
+  说明：以上均为离线校验（本机无 omni，跑不了 Isaac Sim）。训练侧请关注
+        TensorBoard 里 Episode_Reward/feet_yaw_pivot 与 Episode_Reward/feet_yaw_alignment
+        的量级，用于微调权重。
+
+
+【五】调参建议
+--------------------------------------------------------------------------------
+  * 权重取舍：让 Episode_Reward/feet_yaw_pivot 的量级与已有的 Episode_Reward/feet_slide
+    相当即可（两者都是接触相的 L1 速度类惩罚，量纲可比）。
+  * 若走路变得「腿不敢转、步幅变小」：优先降 feet_yaw_pivot，再降 feet_yaw_alignment。
+  * 若内外八仍明显：先加 feet_yaw_alignment，再考虑 hip_yaw_deviation_walk
+    （后者更容易和 AMP 参考打架）。
+  * 想放开转向时的拧脚惩罚：把 feet_yaw_alignment / feet_yaw_pivot 的
+    ang_vel_z_eps 调大（门控变宽），或直接置 0.05 -> 1.0。
+  * feet_yaw_alignment 目前目标是「内外八 = 0」。人正常站立/行走有 5~10° 外八，
+    若机器人被压成完全平行导致不自然，可给该项加一个目标偏角偏移。

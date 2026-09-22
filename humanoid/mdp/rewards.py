@@ -288,16 +288,8 @@ def feet_yaw_alignment(
     ang_vel_z_eps: float = 0.05,
     contact_force_threshold: float = 5.0,
 ) -> torch.Tensor:
-    """Penalize feet yaw (toe-in/out) deviation from the base heading.
-
-    Only active during near-pure forward-walking commands (|vy| and |wz| close
-    to 0), gated smoothly to avoid discontinuities when the command includes
-    turning/side-stepping. Only counts the error while a foot is in stance,
-    since swing-phase feet naturally rotate during stepping.
-    """
     asset: Articulation = env.scene[asset_cfg.name]
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
-
     base_yaw_quat = math_utils.yaw_quat(asset.data.root_quat_w)  # (N, 4)
     foot_quat = asset.data.body_quat_w[:, asset_cfg.body_ids, :]  # (N, num_feet, 4)
     num_feet = foot_quat.shape[1]
