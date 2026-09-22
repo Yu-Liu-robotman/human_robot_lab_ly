@@ -249,8 +249,6 @@ class HumaRobotSimRos(Node):
             print(f'关节 {i}: {joint_name}\r')
             if i > 0:
                 joint_names.append(joint_name)
-        # name_map 仅用于兼容旧版 params.yaml（里面存的是 joint_L_hipY 这类 SDK 别名）。
-        # play.py 现在直接导出原始关节名（= mujoco 关节名），命中不到 map 时按原样使用。
         name_map = {
             "joint_L_hipY": "leg_left_hip_yaw_joint",
             "joint_L_hipR": "leg_left_hip_roll_joint",

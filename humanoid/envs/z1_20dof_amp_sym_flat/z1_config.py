@@ -38,7 +38,7 @@ KEY_POS_LIST=[
     "arm_right_hand_link"
 ]
 ANCHOR_NAME = "base_link"
-COMMAND_THRESHOLD = 0.05
+COMMAND_THRESHOLD = 0.1
 
 @configclass
 class Z120DOFRewardCfg(RewardCfg):
@@ -101,6 +101,7 @@ class Z120DOFRewardCfg(RewardCfg):
         weight=-0.5,
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw_joint", ".*_hip_roll_joint"]),
+            "command_threshold": COMMAND_THRESHOLD
         },
     )
 
@@ -115,6 +116,7 @@ class Z120DOFRewardCfg(RewardCfg):
                     ".*_elbow_joint"
                 ],
             ),
+            "command_threshold": COMMAND_THRESHOLD
         },
     )
 
