@@ -90,11 +90,12 @@ class Z120DOFRewardCfg(RewardCfg):
     # add*
     feet_not_lifted_when_commanded = RewTerm(
         func=z1_mdp.feet_not_lifted_when_commanded,
-        weight=-10.0,
+        weight=-5.0,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
             "command_threshold": COMMAND_THRESHOLD,
             "min_contact_time": 0.02,
+            "stand_cmd": True,
         }
     )
     swing_foot_clearance = RewTerm(
@@ -140,7 +141,7 @@ class Z120DOFRewardCfg(RewardCfg):
         func=z1_mdp.action_smoothness_with_curriculum,
         weight=-0.0001,
         params={
-            "start_scale": 0.1,
+            "start_scale": 0.9,
             "power": 0.8,
             "interval_epochs": 200 * 24,
         },
@@ -193,7 +194,7 @@ class Z120DOFRewardCfg(RewardCfg):
     # add* 站立姿态优化
     stand_still_joint_deviation_l1 = RewTerm(
         func=mdp.leglab_stand_still_joint_deviation_l1,
-        weight=-2.0,
+        weight=-5.0,
         params={
             "command_threshold": COMMAND_THRESHOLD,
             "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
@@ -281,8 +282,9 @@ class Z120DOFFlatEnvCfg(BaseEnvCfg):
         self.scene.height_scanner.critic_only = True  # Actor is blind
         # add*
         self.domain_rand.events.push_robot.interval_range_s = (4.0, 8.0)
-        self.domain_rand.events.push_robot.params["velocity_range"] = {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}
+        self.domain_rand.events.push_robot.params["velocity_range"] = {"x": (-0.65, 0.65), "y": (-0.65, 0.65)}
         self.scene.max_episode_length_s = 10
+
 @configclass
 class Z120DOFFlatAgentCfg(BaseAgentCfg):
     def __post_init__(self):
