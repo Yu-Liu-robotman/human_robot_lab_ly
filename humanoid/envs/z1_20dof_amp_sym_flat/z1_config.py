@@ -14,7 +14,7 @@ from humanoid.envs.base.base_env_config import (  # noqa:F401
     RewardCfg,
     TerminationCfg,
 )
-from humanoid.terrains import DWAQ_TERRAINS_CFG
+from humanoid.terrains import GRAVEL_TERRAINS_CFG
 
 from isaaclab_rl.rsl_rl import (  # noqa:F401
     RslRlOnPolicyRunnerCfg,
@@ -42,7 +42,7 @@ COMMAND_THRESHOLD = 0.1
 
 @configclass
 class Z120DOFRewardCfg(RewardCfg):
-    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=2.0, params={"std": 0.35}) # 3.0
+    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=2.5, params={"std": 0.35}) # 3.0
     track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=2.0, params={"std": 0.35})   # 3.0
     # -- penalties
     flat_orientation_l2 = RewTerm(func=mdp.adaptive_flat_orientation_l2, weight=-1.0)
@@ -53,8 +53,8 @@ class Z120DOFRewardCfg(RewardCfg):
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.005)
     dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-10.0)
     energy = RewTerm(func=mdp.energy, weight=-1e-3)
-    body_orientation_l2 = RewTerm(func=mdp.body_orientation_l2, weight=-1.0, 
-        params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link")})
+    # body_orientation_l2 = RewTerm(func=mdp.body_orientation_l2, weight=-1.0, 
+    #     params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link")})
     
     feet_air_time = RewTerm(
         func=mdp.adaptive_feet_air_time_positive_biped,
@@ -78,47 +78,12 @@ class Z120DOFRewardCfg(RewardCfg):
     dont_vel_tabu = RewTerm(func=mdp.dont_vel_tabu, weight=-1.0)
     termination_penalty = RewTerm(func=mdp.is_terminated, weight=-50.0)
 
-    feet_force = RewTerm(
-        func=mdp.mjlab_soft_landing,
-        weight=-5e-3,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "threshold": 500,
-            "max_reward": 400,
-            "command_threshold": COMMAND_THRESHOLD,
-            "stand_cmd": True,
-        },
-    )
-
     ankle_orientation_l2 = RewTerm(
         func=mdp.feet_yaw_l2, params={"asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll.*")}, 
         weight=-0.35
     )
+
     ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
-
-    joint_deviation_hip = RewTerm(
-        func=z1_mdp.stand_still_joint_deviation_l1,
-        weight=-0.5,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw_joint", ".*_hip_roll_joint"]),
-            "command_threshold": COMMAND_THRESHOLD
-        },
-    )
-
-    joint_deviation_arms = RewTerm(
-        func=z1_mdp.stand_still_joint_deviation_l1,
-        weight=-0.25,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=[
-                    ".*_shoulder_.*_joint",
-                    ".*_elbow_joint"
-                ],
-            ),
-            "command_threshold": COMMAND_THRESHOLD
-        },
-    )
 
     base_height = RewTerm(func=mdp.base_height_penalty,weight=-1.0,params={"target_height": 0.83,"tolerance": 0.01})
 
@@ -140,13 +105,14 @@ class Z120DOFRewardCfg(RewardCfg):
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
             "contact_height": 0.037,
             "target_clearance": 0.077,
-            "minimum_air_time": 0.05,
+            "minimum_air_time": 0.13,
             "maximum_air_time": 0.35,
             "minimum_support_time": 0.04,
             "minimum_speed": COMMAND_THRESHOLD,
-            "maximum_forward_speed": 0.45,
+            "maximum_forward_speed": 0.25,
         },
     )
+    # add* 脚掌偏航对齐 + 脚掌偏航枢轴速度约束 = 抑制扭脚行为
     feet_yaw_alignment = RewTerm(
         func=z1_mdp.feet_yaw_alignment,
         weight=-1.0,
@@ -158,11 +124,6 @@ class Z120DOFRewardCfg(RewardCfg):
             "contact_force_threshold": 5.0,
         },
     )
-    hip_yaw_deviation_walk = RewTerm(
-        func=mdp.joint_deviation_l1,
-        weight=-0.03,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw_joint"])},
-    )
     feet_yaw_pivot = RewTerm(
         func=z1_mdp.feet_yaw_vel_in_contact,
         weight=-0.15,
@@ -173,7 +134,97 @@ class Z120DOFRewardCfg(RewardCfg):
             "lin_vel_y_eps": 0.05,
             "ang_vel_z_eps": 0.05,
         },
-    )    
+    )  
+    # add* 9月22号15:16 -> 参 考加入离散二阶差分逐强时间课程 -> 惩罚加速度突变抖动和顿挫
+    action_smoothness = RewTerm(
+        func=z1_mdp.action_smoothness_with_curriculum,
+        weight=-0.0001,
+        params={
+            "start_scale": 0.1,
+            "power": 0.8,
+            "interval_epochs": 200 * 24,
+        },
+    )  
+    # add* 原地踏步优化
+    double_support_penalize = RewTerm(
+        func=mdp.zero_double_support_penalize,
+        weight=-2.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+            "max_ds_time": 0.1,
+            "force_threshold": 5.0,
+        },
+    )
+    step_alternate_lift = RewTerm(
+        func=z1_mdp.step_in_place_alternate_lift,
+        weight=0.5,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+            "air_time_ref": 0.25,
+            "contact_force_threshold": 5.0,
+        },
+    )
+    # add* 行走步态优化
+    feet_lateral_placement = RewTerm(
+        func=z1_mdp.feet_lateral_placement_penalty,
+        weight=-2.0,                     # 从 -1.0 起试
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+            "target_gap": 0.20,          # 见下方"阈值从哪来"
+            "gap_tolerance": 0.010,
+            "midline_tolerance": 0.02,
+            "command_threshold": COMMAND_THRESHOLD,
+            "max_gap": 0.21,
+            "include_turning": False,
+        },
+    )
+    feet_flat_landing = RewTerm(
+        func=z1_mdp.feet_flat_landing_penalty,
+        weight=-1.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+            "contact_force_threshold": 5.0,
+            "first_contact_only": False,     # True = 只罚「刚触地」那一帧
+            "command_threshold": COMMAND_THRESHOLD,
+            "tolerance_sin2": 0.03,          # ≈ 8°
+        },
+    )
+    # add* 站立姿态优化
+    stand_still_joint_deviation_l1 = RewTerm(
+        func=mdp.leglab_stand_still_joint_deviation_l1,
+        weight=-2.0,
+        params={
+            "command_threshold": COMMAND_THRESHOLD,
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
+            "stand_cmd": True,
+        },
+    ) 
+    # add* 脚掌下落速度惩罚
+    feet_impact_vel = RewTerm(
+        func=z1_mdp.feet_impact_vel,
+        weight=-0.5,       
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll_link"),
+            "height_scale": 0.04, # 梯度落地4cm后开始加大惩罚下落速度
+        },
+    )
+    # 
+    knee_heading_alignment = RewTerm(
+        func=z1_mdp.knee_heading_alignment_penalty,
+        weight=-0.6,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", body_names=[".*_knee_link", ".*_ankle_roll_link"]
+            ),
+            "tolerance": 0.05,
+            "swing_only": True,
+            "swing_height_eps": 0.01,
+            "command_threshold": COMMAND_THRESHOLD,
+            "include_turning": False,
+        },
+    )
+
 @configclass
 class Z120DOFTerminationCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
@@ -207,7 +258,7 @@ class Z120DOFFlatEnvCfg(BaseEnvCfg):
         self.scene.robot = Z120DOF
         # self.scene.terrain_type = "plane"
         self.scene.terrain_type = "generator"
-        self.scene.terrain_generator = DWAQ_TERRAINS_CFG
+        self.scene.terrain_generator = GRAVEL_TERRAINS_CFG
         self.robot.terminate_contacts_body_names = ["base_link"]
         self.robot.feet_body_names = [".*ankle_roll.*"]
         self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = ["base_link"]
@@ -303,7 +354,10 @@ class Z120DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                             # 前进
                             "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_segment_0000-0343.txt",
                             "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/20dof_Gen2_forward.txt",
-                            
+                            "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_slow_1_20dof.txt",
+                            "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/KIT_walk_walking_slow01_poses_20dof.txt",
+                            "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_medium_1_20dof.txt",
+                            "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_medium_2_20dof.txt",
                             # 走转
                             "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_left_segment_4707-4929.txt",
                             "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_right_segment_4474-4696.txt",
@@ -324,7 +378,7 @@ class Z120DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
 
                             ]
     amp_num_preload_transitions = 200000
-    amp_num_frames = 5
+    amp_num_frames = 4
     # amp_discr_hidden_dims = [1024, 512, 256]
     amp_discr_hidden_dims = [1024, 512]
     min_normalized_std = [0.05] * 20
@@ -346,7 +400,7 @@ class Z120DOFAmpFlatSymAgentCfg(Z120DOFAmpFlatAgentCfg):
         self.algorithm.symmetry_cfg = RslRlSymmetryCfg(
             use_data_augmentation=True,
             use_mirror_loss=True,
-            mirror_loss_coeff=0.1,
+            mirror_loss_coeff=0.2,
             data_augmentation_func=z120dof.compute_symmetric_states
         )
 

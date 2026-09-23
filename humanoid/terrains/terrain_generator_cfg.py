@@ -24,9 +24,12 @@ GRAVEL_TERRAINS_CFG = TerrainGeneratorCfg(
     slope_threshold=0.75,
     use_cache=False,
     sub_terrains={
+        "flat": terrain_gen.HfRandomUniformTerrainCfg(
+            proportion=0.3, noise_range=(0.0, 0.0), noise_step=0.02, border_width=0.25
+        ),
         "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-            proportion=0.2, noise_range=(-0.02, 0.04), noise_step=0.02, border_width=0.25
-        )
+            proportion=0.7, noise_range=(-0.02, 0.02), noise_step=0.02, border_width=0.25
+        ),
     },
 )
 

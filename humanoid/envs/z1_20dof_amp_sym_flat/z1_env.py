@@ -19,6 +19,7 @@ from humanoid.utils.env_utils.scene import SceneCfg
 from humanoid.envs.base.base_env import BaseEnv
 from humanoid.mdp.command import TlibotUniformVelocityCommand
 import isaaclab.utils.math as math_utils
+import humanoid.envs.z1_20dof_amp_sym_flat.mdp as z1_mdp
 import re
 @torch.jit.script
 def copysign(a, b):
@@ -674,6 +675,12 @@ class Z1AmpSymEnv20DOF(BaseEnv):
         reward_buf = self.reward_manager.compute(self.step_dt)
         self.reset_env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
         self.reset(self.reset_env_ids)
+
+        _sm_cfg = getattr(self.cfg.reward, "action_smoothness", None)
+        _sm_params = getattr(_sm_cfg, "params", None) or {}
+        if {"start_scale", "power", "interval_epochs"} <= _sm_params.keys():
+            z1_mdp.log_action_smoothness_curriculum(self, **_sm_params)
+
         actor_obs, critic_obs = self.compute_observations()
         hist_obs = self.hist_obs_buf.buffer.reshape(self.num_envs, -1)
         self.extras["observations"] = {"critic": critic_obs,

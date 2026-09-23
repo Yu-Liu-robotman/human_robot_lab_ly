@@ -138,3 +138,239 @@ def feet_yaw_alignment(
         -((command[:, 2] / ang_vel_z_eps) ** 2)
     )
     return reward * straight_scale * env.walk_mask[:, 0].float()
+
+def action_smoothness(env: BaseEnv) -> torch.Tensor:
+    """动作的二阶差分惩罚（jerk 型），鼓励平滑控制。"""
+    action = env.action  # (N, num_actions)
+    # 想改用「未 delay 的原始策略动作」就换成：
+    #   action = env.action_buffer._circular_buffer.buffer[:, -1, :]
+    if not hasattr(env, "_act_smooth_prev"):
+        env._act_smooth_prev = torch.zeros_like(action)
+        env._act_smooth_prev_prev = torch.zeros_like(action)
+        env._act_smooth_count = torch.zeros(env.num_envs, dtype=torch.long, device=action.device)
+    prev = env._act_smooth_prev
+    prev_prev = env._act_smooth_prev_prev
+    count = env._act_smooth_count
+
+    second_diff = action + prev_prev - 2.0 * prev
+    reward = torch.sum(torch.square(second_diff), dim=1) * (count >= 2).float()
+
+    prev_prev.copy_(prev)
+    prev.copy_(action)
+    count += 1
+
+    reset_buf = getattr(env, "reset_buf", None)
+    if reset_buf is not None:
+        reset_ids = reset_buf.nonzero(as_tuple=False).flatten()
+        if reset_ids.numel() > 0:
+            reward[reset_ids] = 0.0
+            prev[reset_ids] = 0.0
+            prev_prev[reset_ids] = 0.0
+            count[reset_ids] = 0
+    return reward
+
+def _epoch_curriculum_scale(env: BaseEnv, start_scale: float, power: float, interval_epochs: int) -> float:
+    """按 epoch 间隔计算课程缩放系数，从 start_scale 逐步升到 1.0"""
+    interval = max(int(interval_epochs), 1)
+    decimation = max(1, int(getattr(env.cfg.sim, "decimation", 1)))
+    common_step_counter = int(getattr(env, "sim_step_counter", 0)) // decimation
+    updates = common_step_counter // interval
+    return float(start_scale) ** (float(power) ** updates)
+
+
+def action_smoothness_with_curriculum(
+    env: BaseEnv, start_scale: float, power: float, interval_epochs: int
+) -> torch.Tensor:
+    """action_smoothness 乘上一个从 start_scale 逐渐升到 1.0 的课程系数"""
+    return action_smoothness(env) * _epoch_curriculum_scale(env, start_scale, power, interval_epochs)
+
+
+def log_action_smoothness_curriculum(
+    env: BaseEnv, start_scale: float, power: float, interval_epochs: int
+) -> float:
+    scale = _epoch_curriculum_scale(env, start_scale, power, interval_epochs)
+    if "log" not in env.extras:
+        env.extras["log"] = {}
+    env.extras["log"]["action_smoothness/curriculum_scale"] = scale
+    return scale
+
+def step_in_place_alternate_lift(
+    env: BaseEnv,
+    sensor_cfg: SceneEntityCfg,
+    air_time_ref: float = 0.15,
+    contact_force_threshold: float = 5.0,
+) -> torch.Tensor:
+    """踏步模式(env.walk_mask)下奖励「交替抬腿」"""
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    net_force_z = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2]   # (N, 2)
+    air_time = contact_sensor.data.current_air_time[:, sensor_cfg.body_ids]     # (N, 2)
+
+    airborne = net_force_z <= contact_force_threshold                            # (N, 2)
+    single_support = airborne.sum(dim=1) == 1                                    # 恰好一只脚离地
+    swing_foot = airborne.float().argmax(dim=1)                                  # 离地脚索引
+
+    # ---- 交替记忆：最近一次「落地」的是哪只脚 ----
+    if not hasattr(env, "_step_lift_last_landed"):
+        env._step_lift_last_landed = torch.full(
+            (env.num_envs,), -1, dtype=torch.long, device=env.device
+        )
+        env._step_lift_prev_airborne = airborne.clone()
+
+    episode_len = getattr(env, "episode_length_buf", None)
+    if episode_len is not None:
+        # 每个 episode 第一步清零，避免跨 episode 残留
+        env._step_lift_last_landed = torch.where(
+            episode_len <= 1,
+            torch.full_like(env._step_lift_last_landed, -1),
+            env._step_lift_last_landed,
+        )
+
+    landed_now = (~airborne) & env._step_lift_prev_airborne                      # (N, 2)
+    env._step_lift_prev_airborne = airborne.clone()
+    env._step_lift_last_landed = torch.where(
+        landed_now.any(dim=1),
+        landed_now.float().argmax(dim=1),
+        env._step_lift_last_landed,
+    )
+    alternated = single_support & (swing_foot != env._step_lift_last_landed)
+
+    swing_air_time = air_time.max(dim=1).values
+    ramp = torch.clamp(swing_air_time / max(air_time_ref, 1e-6), 0.0, 1.0)
+
+    return alternated.float() * ramp * env.walk_mask[:, 0].float()
+
+def feet_lateral_placement_penalty(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg,
+    target_gap: float = 0.10,
+    gap_tolerance: float = 0.02,
+    max_gap: float = 0.13,            # 硬上界：超过就重罚（专治外展）
+    midline_tolerance: float = 0.02,
+    splay_gain: float = 4.0,
+    command_threshold: float = 0.1,
+    include_turning: bool = False,
+) -> torch.Tensor:
+    """约束落脚点侧向位置：中点贴机身中线 + 站宽接近 target_gap + 站宽不超 max_gap。"""
+    asset: Articulation = env.scene[asset_cfg.name]
+    assert len(asset_cfg.body_ids) == 2
+
+    feet_w = asset.data.body_pos_w[:, asset_cfg.body_ids, :]
+    rel_w = feet_w - asset.data.root_pos_w.unsqueeze(1)
+    lat_axis = math_utils.matrix_from_quat(asset.data.root_quat_w)[:, :, 1]   # 机身 y 轴
+    y_b = torch.sum(rel_w * lat_axis.unsqueeze(1), dim=-1)                    # (N,2)
+
+    gap = torch.abs(y_b[:, 0] - y_b[:, 1])             # ← 必须取 abs：与 body_ids 顺序无关
+    midline_err = torch.abs(y_b[:, 0] + y_b[:, 1]) / 2.0
+
+    gap_lo = torch.relu(target_gap - gap_tolerance - gap)
+    gap_hi = torch.relu(gap - (target_gap + gap_tolerance))
+    splay = torch.relu(gap - max_gap)                  # 单向硬上界
+
+    cost = torch.relu(midline_err - midline_tolerance) + gap_lo + gap_hi + splay_gain * splay
+
+    command = env.command_generator.command
+    gate = (torch.abs(command[:, 1]) <= command_threshold).float()
+    if not include_turning:
+        turning = (torch.abs(command[:, 2]) > command_threshold) & (
+            torch.linalg.vector_norm(command[:, :2], dim=1) <= command_threshold
+        )
+        gate = gate * (~turning).float()
+    return cost * gate
+
+def feet_flat_landing_penalty(
+    env: BaseEnv,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg,
+    contact_force_threshold: float = 5.0,
+    first_contact_only: bool = False,
+    command_threshold: float = 0.1,
+    tolerance_sin2: float = 0.02,
+) -> torch.Tensor:
+    """约束脚掌落地时保持水平（脚底平面与地面平行）。
+
+    几何量：ankle_roll link 的 body z 轴（建模上即「脚掌朝上」方向）与世界 z 轴的
+    夹角 θ。用 sin²θ 作为误差（值域 [0,1]，θ∈[0°,90°] 上单调、且处处可导）。
+
+    比「约束 ankle_pitch/ankle_roll ≈ 0」更准：脚掌姿态是 hip_pitch+knee+
+    ankle_pitch（绕 y）与 hip_roll+ankle_roll（绕 x）的累加，看几何姿态才能
+    把上游关节的贡献一起算进去。
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    body_ids = asset_cfg.body_ids
+    assert len(body_ids) == 2
+
+    # (N, F, 3, 3) 的第 3 列 = body z 轴在世界系
+    foot_up_w = math_utils.matrix_from_quat(asset.data.body_quat_w[:, body_ids, :])[:, :, :, 2]
+    cos_tilt = foot_up_w[:, :, 2]                                # cos θ
+    tilt_sin2 = torch.clamp(1.0 - cos_tilt * cos_tilt, min=0.0)   # sin²θ，水平时为 0
+    cost = torch.relu(tilt_sin2 - tolerance_sin2)
+
+    # 只在触地时生效；可选收紧到「刚触地」那一帧
+    if first_contact_only:
+        active = sensor.compute_first_contact(env.step_dt)[:, sensor_cfg.body_ids].float()
+    else:
+        active = (
+            sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2] > contact_force_threshold
+        ).float()
+
+    # 站立/零指令时不管（那时脚本来就该平，但别和 stand 相关奖励叠加）
+    command = env.command_generator.command
+    gait = (torch.linalg.vector_norm(command[:, :3], dim=1) > command_threshold).float()
+    return torch.sum(cost * active, dim=1) * gait
+
+def feet_impact_vel(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg,
+    height_scale: float = 0.04,
+) -> torch.Tensor:
+    """惩罚「接近地面时的下落速度」—— 不限工况，任何指令下都要求软着陆"""
+    asset: Articulation = env.scene[asset_cfg.name]
+    foot_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]         # (N, F)
+    foot_vz = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, 2]    # (N, F)
+
+    height = foot_z - torch.min(foot_z, dim=-1, keepdim=True)[0]
+    proximity = torch.exp(-height / max(height_scale, 1e-6))
+    approach = torch.clamp(-foot_vz, min=0.0)                        # 只罚向下
+
+    return torch.sum(proximity * approach, dim=-1)
+
+def knee_heading_alignment_penalty(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg,          # body_names=[".*_knee_link", ".*_ankle_roll_link"]
+    tolerance: float = 0.08,
+    swing_only: bool = True,
+    swing_height_eps: float = 0.01,
+    command_threshold: float = 0.1,
+    include_turning: bool = False,
+) -> torch.Tensor:
+    """约束「膝关节的指向」与机身朝向一致；swing_only=True 时只罚抬起那条腿"""
+    asset: Articulation = env.scene[asset_cfg.name]
+    ids = list(asset_cfg.body_ids)
+    assert len(ids) % 2 == 0 and len(ids) >= 2, "需要成对的 knee / ankle"
+    knee_ids, ankle_ids = ids[::2], ids[1::2]
+
+    knee_x_w = math_utils.matrix_from_quat(
+        asset.data.body_quat_w[:, knee_ids, :]
+    )[:, :, :, 0]
+    base_x_w = math_utils.matrix_from_quat(asset.data.root_quat_w)[:, None, :, 0]
+
+    def _heading(v):
+        return torch.atan2(v[..., 1], v[..., 0])
+
+    yaw_err = math_utils.wrap_to_pi(_heading(knee_x_w) - _heading(base_x_w))
+    err = torch.relu(torch.abs(yaw_err) - tolerance)
+
+    if swing_only:
+        foot_z = asset.data.body_pos_w[:, ankle_ids, 2]
+        higher = foot_z > (foot_z.min(dim=-1, keepdim=True)[0] + swing_height_eps)
+        err = err * higher.float()
+
+    command = env.command_generator.command
+    gate = (torch.linalg.vector_norm(command[:, :3], dim=1) > command_threshold).float()
+    if not include_turning:
+        turning = (torch.abs(command[:, 2]) > command_threshold) & (
+            torch.linalg.vector_norm(command[:, :2], dim=1) <= command_threshold
+        )
+        gate = gate * (~turning).float()
+    return torch.sum(err, dim=1) * gate

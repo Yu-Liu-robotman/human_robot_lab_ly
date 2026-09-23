@@ -2,8 +2,6 @@
 
 import argparse
 import os
-import shutil
-import yaml
 
 import torch
 from isaaclab.app import AppLauncher
@@ -30,139 +28,13 @@ args_cli, hydra_args = parser.parse_known_args()
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
-from isaaclab_rl.rsl_rl import export_policy_as_jit, export_policy_as_onnx
 from isaaclab_tasks.utils import get_checkpoint_path
 
 from humanoid.envs import *  # noqa:F401, F403
 from humanoid.utils.cli_args import update_rsl_rl_cfg
-import humanoid.tools.common as tool_util
-from datetime import datetime
-from humanoid import HUMANOID_LAB_ROOT_DIR
 from humanoid.terrains import GRAVEL_TERRAINS_CFG, ROUGH_TERRAINS_CFG, DWAQ_TERRAINS_CFG, STAIRS_SLOPE_HARD_CFG
-
-def policy_exported_param(env):
-    num_actions = env.num_actions
-    obs_index_phase = env.obs_index_phase
-    obs_index_cmd = env.obs_index_cmd
-    obs_index_q = env.obs_index_q
-    obs_index_qd = env.obs_index_qd
-    obs_index_action = env.obs_index_action
-    obs_index_imu_waist_angvel = env.obs_index_imu_waist_angvel
-    obs_index_imu_waist_orientation = env.obs_index_imu_waist_orientation
-    obs_index_torque = env.obs_index_torque
-    obs_index_forcesensor = env.obs_index_forcesensor
-    obs_index_imu_waist_linearacc = env.obs_index_imu_waist_linearacc
-    obs_index_imu_torso_angvel = env.obs_index_imu_torso_angvel
-    obs_index_imu_torso_orientation = env.obs_index_imu_torso_orientation
-    obs_index_imu_torso_linearacc = env.obs_index_imu_torso_linearacc
-    
-    default_joint_pos = []
-    for i in range(env.default_dof_pos.shape[1]):
-        default_joint_pos.append(env.default_dof_pos[0, i].item())
-    # 直接输出 env.dof_names 的原始关节名（IsaacLab 命名），不再映射为 joint_L_hipY 之类的 SDK 别名
-    dof_names = list(env.dof_names)
-       
-    exp_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    if env.cfg.experiment_name == "t2pro_20dof_amp_dwaq_flat" or env.cfg.experiment_name == "t2pro_12dof_amp_dwaq_flat":
-        frame_stack = env.cfg.robot.hist_obs_num
-    else:
-        frame_stack = env.cfg.robot.actor_obs_history_length
-    KDS = env.cfg.kds
-    KPS = env.cfg.kps
-    kds = env.build_scale_list(KDS, env.dof_names)
-    kps = env.build_scale_list(KPS, env.dof_names)
-    policy_param = {
-        "action_scale": env.action_scale_list,
-        "kp": kps,
-        "kd": kds,
-        "rl_version": env.rl_version,
-        "default_joint_pos": default_joint_pos,
-        "cycle_time_range": env.cfg.cycle_time_range,
-        "has_cmd_cycle_time": env.cfg.has_cmd_cycle_time,
-        "exp_name": env.cfg.experiment_name,
-        "exp_time": exp_time,
-        "ref_cycle_type": 0,
-        "dof_names": dof_names,
-        "num_actions": num_actions,
-        "frame_stack": frame_stack,
-        "num_single_obs": env.num_single_obs,
-        "dt": env.step_dt,
-        "cycle_time": env.cfg.cycle_time,
-        "clip_observations": env.cfg.normalization.clip_observations,
-        "num_observations": env.num_single_obs * frame_stack,
-        "clip_actions": env.cfg.normalization.clip_actions,
-        "num_forcesensor": 2,
-
-        "obs_scales_dof_pos": env.cfg.normalization.obs_scales.joint_pos,
-        "obs_scales_dof_vel": env.cfg.normalization.obs_scales.joint_vel,
-        "obs_scales_lin_vel": env.cfg.normalization.obs_scales.lin_vel,
-        "obs_scales_ang_vel": env.cfg.normalization.obs_scales.ang_vel,
-        "obs_scales_imu_waist_angvel": env.cfg.normalization.obs_scales.ang_vel,
-        "obs_scales_imu_waist_orientation": env.cfg.normalization.obs_scales.projected_gravity,
-        "obs_scales_torque": 0,
-        "obs_scales_force": 0,
-        "obs_scales_imu_torso_angvel": 0,
-        "obs_scales_imu_torso_orientation": 0,
-
-        "obs_index_phase": obs_index_phase,
-        "obs_index_cmd": obs_index_cmd,
-        "obs_index_q": obs_index_q,
-        "obs_index_qd": obs_index_qd,
-        "obs_index_action": obs_index_action,
-        "obs_index_imu_waist_angvel": obs_index_imu_waist_angvel,
-        "obs_index_imu_waist_orientation": obs_index_imu_waist_orientation,
-        "obs_index_torque": obs_index_torque,
-        "obs_index_forcesensor": obs_index_forcesensor,
-        "obs_index_imu_waist_linearacc": obs_index_imu_waist_linearacc,
-        "obs_index_imu_torso_angvel": obs_index_imu_torso_angvel,
-        "obs_index_imu_torso_orientation": obs_index_imu_torso_orientation,
-        "obs_index_imu_torso_linearacc": obs_index_imu_torso_linearacc,
-
-
-        "has_obs_torque": (env.num_single_obs > obs_index_torque and obs_index_torque != -1),
-        "has_obs_imu_waist_linearacc":
-            (env.num_single_obs > obs_index_imu_waist_linearacc and obs_index_imu_waist_linearacc != -1),
-        "has_obs_forcesensor":
-            (env.num_single_obs > obs_index_forcesensor and obs_index_forcesensor != -1),
-        "has_obs_imu_torso":
-            (env.num_single_obs > obs_index_imu_torso_orientation and obs_index_imu_torso_orientation != -1),
-        "has_obs_imu_torso_linearacc":
-            (env.num_single_obs > obs_index_imu_torso_linearacc and obs_index_imu_torso_linearacc != -1),
-        "has_obs_phase":
-            (env.num_single_obs > obs_index_phase and obs_index_phase != -1)
-    }
-    return policy_param
-
-def export_policy_param_file(env, filepath):
-    params_dict = {
-        "rl": policy_exported_param(env)
-    }
-    param_yaml = yaml.dump(params_dict)
-    yaml_path = os.path.join(filepath, 'params.yaml')
-    with open(yaml_path, 'w') as f:
-        f.write(param_yaml)
-    return yaml_path
-
-def export_sim2simconfig(model_path, export_path, mjcf_path):
-    cfg_path = model_path
-    dist_file = os.path.join(export_path, tool_util.SIM2SIMCFG_FILENAME)
-    import humanoid.config.sim2sim_config as sim2simcfg
-    cfg = sim2simcfg.Sim2simCfg()
-    tool_util.update_class_from_yaml_file(cfg, cfg_path)
-    cfg.sim_config.mjcf_path = mjcf_path
-    cfg.sim_config.model_path = f"{export_path}/policy.pt"
-    cfg.sim_config.param_path = f"{export_path}/params.yaml"
-    tool_util.save_class_to_yaml_file(cfg, dist_file)
-    return dist_file
-
-
-def export_assets(src_asset_file, model_mjcf_file, load_run):
-    dist_mjcf_file = tool_util.get_mjcf_filename_train_backup(src_asset_file, load_run)
-    print(model_mjcf_file)
-    if os.path.exists(model_mjcf_file):
-        shutil.copy2(model_mjcf_file, dist_mjcf_file)
-        print(f'copy: {model_mjcf_file}->{dist_mjcf_file}')
-    return dist_mjcf_file
+# 导出逻辑统一收敛到 humanoid/utils/export_utils.py，训练/推理共用同一套
+from humanoid.utils.export_utils import export_all  # noqa: F401
 
 def play():
     runner: OnPolicyRunner
@@ -217,25 +89,9 @@ def play():
     elif env_class_name == "t2pro_12dof_amp_dwaq_flat":
         export_dwaq_policy(checkpoint_path=resume_path, num_obs=env.num_single_obs, num_actions=env.num_actions,)# device="cuda:0")
     else:
-        export_policy_as_jit(runner.alg.policy, runner.obs_normalizer, path=export_model_dir, filename="policy.pt")
-        export_policy_as_onnx(
-            runner.alg.policy, normalizer=runner.obs_normalizer, path=export_model_dir, filename="policy.onnx"
-        )
-    param_file = export_policy_param_file(env, export_model_dir)
-    print('Exported policy param to: ', param_file)
-    model_path_mjcf_file = f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/z1/mjcf/z1_v1_23dof.xml"
-    
-    src_asset_file = f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/z1/mjcf/{agent_cfg.experiment_name.split('_')[0]}.xml"
-    # model_path_mjcf_file = (f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/z1/mjcf/"f"{agent_cfg.experiment_name.split('_')[0]}_v1.xml")
-
-    # src_asset_file = (f"{HUMANOID_LAB_ROOT_DIR}/humanoid/assets/z1/mjcf/{agent_cfg.experiment_name.split('_')[0]}.xml")
-    load_run = os.path.dirname(resume_path)
-    load_run = os.path.basename(load_run)
-    mjcf_file = export_assets(src_asset_file, model_path_mjcf_file, load_run)
-    print('Exported mjcf file to: ', mjcf_file)
-    modepath = os.path.join(os.path.dirname(resume_path), tool_util.TRAINCOPY_SIM2SIMCFG_FILENAME)
-    simcfg_file = export_sim2simconfig(modepath, export_model_dir, mjcf_file)
-    print('Exported sim2sim config file to: ', simcfg_file)
+        # 与训练期自动导出共用同一套逻辑
+        # （policy.pt / policy.onnx / params.yaml / sim2sim_cfg.yaml + MJCF 备份）
+        export_all(env, runner, export_dir=export_model_dir, log_dir=log_dir)
 
     if not args_cli.headless:
         from humanoid.utils.keyboard import Keyboard
