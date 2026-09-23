@@ -36,8 +36,12 @@ from rsl_rl.modules import (
     StudentTeacher,
     StudentTeacherRecurrent,
 )
-from rsl_rl.utils import AMPLoader,AMPLoader12dof, Normalizer, store_code_state, AMPLoader
-
+from rsl_rl.utils import AMPLoader, AMPLoaderZ120dof12dof, AMPLoaderZ129dof12dof, Normalizer, store_code_state
+_LOADER_MAP = {
+    "z120dof": AMPLoader,
+    "z120dof_12dof": AMPLoaderZ120dof12dof,
+    "z129dof_12dof": AMPLoaderZ129dof12dof,
+}
 
 class AmpOnPolicyRunner:
     """On-policy runner for training and evaluation."""
@@ -112,7 +116,11 @@ class AmpOnPolicyRunner:
         if self.amp_num_frames < 2:
             raise ValueError(f"amp_num_frames 至少为 2，当前为 {self.amp_num_frames}。")
         # init amp loader
-        loader_cls = AMPLoader12dof if train_cfg.get("amp_use_leg12dof", False) else AMPLoader
+        _loader_name = train_cfg.get("amp_loader")
+        if _loader_name is None:      # 向后兼容旧的布尔开关
+            _loader_name = "z129dof_12dof" if train_cfg.get("amp_use_leg12dof", False) else "z120dof"
+        loader_cls = _LOADER_MAP[_loader_name]
+        
         amp_data = loader_cls(
             device,
             time_between_frames=self.env.step_dt,

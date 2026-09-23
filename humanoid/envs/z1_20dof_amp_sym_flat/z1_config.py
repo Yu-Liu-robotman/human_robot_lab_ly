@@ -30,12 +30,12 @@ KEY_POS_LIST=[
     "leg_right_knee_link",
     "leg_left_ankle_roll_link",
     "leg_right_ankle_roll_link",
-    "arm_left_shoulder_yaw_link",
-    "arm_right_shoulder_yaw_link",
-    "arm_left_elbow_link",
-    "arm_right_elbow_link",
-    "arm_left_hand_link",
-    "arm_right_hand_link"
+    # "arm_left_shoulder_yaw_link",
+    # "arm_right_shoulder_yaw_link",
+    # "arm_left_elbow_link",
+    # "arm_right_elbow_link",
+    # "arm_left_hand_link",
+    # "arm_right_hand_link"
 ]
 ANCHOR_NAME = "base_link"
 COMMAND_THRESHOLD = 0.1
@@ -85,19 +85,19 @@ class Z120DOFRewardCfg(RewardCfg):
 
     ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
 
-    base_height = RewTerm(func=mdp.base_height_penalty,weight=-1.0,params={"target_height": 0.83,"tolerance": 0.01})
+    base_height = RewTerm(func=mdp.base_height_penalty,weight=-1.0,params={"target_height": 0.83,"tolerance": 0.014})
 
     # add*
-    feet_not_lifted_when_commanded = RewTerm(
-        func=z1_mdp.feet_not_lifted_when_commanded,
-        weight=-5.0,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
-            "command_threshold": COMMAND_THRESHOLD,
-            "min_contact_time": 0.02,
-            "stand_cmd": True,
-        }
-    )
+    # feet_not_lifted_when_commanded = RewTerm(
+    #     func=z1_mdp.feet_not_lifted_when_commanded,
+    #     weight=-5.0,
+    #     params={
+    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+    #         "command_threshold": COMMAND_THRESHOLD,
+    #         "min_contact_time": 0.02,
+    #         "stand_cmd": True,
+    #     }
+    # )
     swing_foot_clearance = RewTerm(
         func=z1_mdp.walk_swing_foot_clearance,
         weight=-0.5,
@@ -152,7 +152,7 @@ class Z120DOFRewardCfg(RewardCfg):
         weight=-2.0,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
-            "max_ds_time": 0.1,
+            "max_ds_time": 0.18,
             "force_threshold": 5.0,
         },
     )
@@ -168,10 +168,10 @@ class Z120DOFRewardCfg(RewardCfg):
     # add* 行走步态优化
     feet_lateral_placement = RewTerm(
         func=z1_mdp.feet_lateral_placement_penalty,
-        weight=-2.0,                     # 从 -1.0 起试
+        weight=-2.0,                     
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
-            "target_gap": 0.20,          # 见下方"阈值从哪来"
+            "target_gap": 0.20,          
             "gap_tolerance": 0.010,
             "midline_tolerance": 0.02,
             "command_threshold": COMMAND_THRESHOLD,
@@ -194,13 +194,13 @@ class Z120DOFRewardCfg(RewardCfg):
     # add* 站立姿态优化
     stand_still_joint_deviation_l1 = RewTerm(
         func=mdp.leglab_stand_still_joint_deviation_l1,
-        weight=-5.0,
+        weight=-2.0,
         params={
             "command_threshold": COMMAND_THRESHOLD,
-            "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
+            "asset_cfg": SceneEntityCfg("robot", joint_names=["arm_.*_joint"]),   # ← 只 8 个臂关节
             "stand_cmd": True,
         },
-    ) 
+    )
     # add* 脚掌下落速度惩罚
     feet_impact_vel = RewTerm(
         func=z1_mdp.feet_impact_vel,
@@ -225,7 +225,38 @@ class Z120DOFRewardCfg(RewardCfg):
             "include_turning": False,
         },
     )
-
+    dont_wait = RewTerm(func=mdp.dont_wait, weight=-0.75)
+    # add* 落地后膝盖尽量打直
+    knee_extend_on_contact = RewTerm(
+        func=z1_mdp.knee_extend_on_contact_penalty,
+        weight=-0.3,
+        params={
+            "sensor_cfg": SceneEntityCfg(
+                "contact_sensor",
+                body_names=["leg_left_ankle_roll_link", "leg_right_ankle_roll_link"],
+                preserve_order=True,
+            ),
+            "asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=["leg_left_knee_joint", "leg_right_knee_joint"],
+                preserve_order=True,
+            ),
+            "knee_slack": 0.05,
+            "contact_force_threshold": 10.0,
+            "command_threshold": COMMAND_THRESHOLD,
+            "include_turning": False,
+        },
+    )
+    # add* 摆臂优化
+    joint_deviation_arms = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-0.5,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*"]
+            )
+        },
+    )
 @configclass
 class Z120DOFTerminationCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
@@ -360,6 +391,7 @@ class Z120DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                             "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/KIT_walk_walking_slow01_poses_20dof.txt",
                             "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_medium_1_20dof.txt",
                             "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_medium_2_20dof.txt",
+
                             # 走转
                             "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_left_segment_4707-4929.txt",
                             "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_right_segment_4474-4696.txt",
@@ -386,6 +418,7 @@ class Z120DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     min_normalized_std = [0.05] * 20
     amp_body_names=KEY_POS_LIST
     amp_anchor_name=ANCHOR_NAME
+    amp_loader = "z120dof_12dof"
 
 class Z120DOFAmpFlatSymEnvCfg(Z120DOFFlatEnvCfg):
     def __post_init__(self):

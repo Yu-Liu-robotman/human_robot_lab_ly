@@ -374,3 +374,32 @@ def knee_heading_alignment_penalty(
         )
         gate = gate * (~turning).float()
     return torch.sum(err, dim=1) * gate
+
+def knee_extend_on_contact_penalty(
+    env: BaseEnv,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg,
+    knee_slack: float = 0.05,            # 宽松度 rad
+    contact_force_threshold: float = 5.0,
+    command_threshold: float = 0.1,
+    include_turning: bool = False,
+) -> torch.Tensor:
+    """落地后（脚触地时）膝盖尽量打直"""
+    sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    knee_abs = asset.data.joint_pos[:, asset_cfg.joint_ids]                # (N, 2)
+    knee_default = asset.data.default_joint_pos[:, asset_cfg.joint_ids]    # (N, 2)
+    err = torch.relu(knee_abs - (knee_default + knee_slack))               # 弯过头才罚
+    contact = (
+        sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2] > contact_force_threshold
+    ).float()                                                              # (N, 2)
+    cost = torch.sum(err * contact, dim=-1)
+    command = env.command_generator.command
+    gate = (torch.linalg.vector_norm(command[:, :3], dim=1) > command_threshold).float()
+    if not include_turning:
+        turning = (torch.abs(command[:, 2]) > command_threshold) & (
+            torch.linalg.vector_norm(command[:, :2], dim=1) <= command_threshold
+        )
+        gate = gate * (~turning).float()
+    return cost * gate

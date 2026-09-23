@@ -85,7 +85,7 @@ class Z129DOFRewardCfg(RewardCfg):
 
     ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
 
-    base_height = RewTerm(func=mdp.base_height_penalty,weight=-1.0,params={"target_height": 0.83,"tolerance": 0.01})
+    base_height = RewTerm(func=mdp.base_height_penalty,weight=-1.0,params={"target_height": 0.83,"tolerance": 0.014})
 
     # add*
     feet_not_lifted_when_commanded = RewTerm(
