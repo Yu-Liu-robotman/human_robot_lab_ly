@@ -36,7 +36,7 @@ from rsl_rl.modules import (
     StudentTeacher,
     StudentTeacherRecurrent,
 )
-from rsl_rl.utils import AMPLoader, Normalizer, store_code_state, AMPLoader
+from rsl_rl.utils import AMPLoader,AMPLoader12dof, Normalizer, store_code_state, AMPLoader
 
 
 class AmpOnPolicyRunner:
@@ -112,7 +112,8 @@ class AmpOnPolicyRunner:
         if self.amp_num_frames < 2:
             raise ValueError(f"amp_num_frames 至少为 2，当前为 {self.amp_num_frames}。")
         # init amp loader
-        amp_data = AMPLoader(
+        loader_cls = AMPLoader12dof if train_cfg.get("amp_use_leg12dof", False) else AMPLoader
+        amp_data = loader_cls(
             device,
             time_between_frames=self.env.step_dt,
             preload_transitions=True,

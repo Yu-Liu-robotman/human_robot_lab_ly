@@ -6,7 +6,7 @@
 """Helper functions."""
 
 from .motion_loader_z120dof import AMPLoader
-
+from .motion_loader_z129dof_12dofAmp import AMPLoader as AMPLoader12dof
 from .utils import (
     Normalizer,
     resolve_nn_activation,
@@ -18,4 +18,5 @@ from .utils import (
 
 __all__ = [
     "AMPLoader",
+    "AMPLoader12dof",
 ]

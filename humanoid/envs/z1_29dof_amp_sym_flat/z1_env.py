@@ -194,14 +194,14 @@ class Z1AmpSymEnv29DOF(BaseEnv):
             "leg_right_knee_joint",
             "leg_right_ankle_pitch_joint",
             "leg_right_ankle_roll_joint",
-            "arm_left_shoulder_pitch_joint",
-            "arm_left_shoulder_roll_joint",
-            "arm_left_shoulder_yaw_joint",
-            "arm_left_elbow_joint",
-            "arm_right_shoulder_pitch_joint",
-            "arm_right_shoulder_roll_joint",
-            "arm_right_shoulder_yaw_joint",
-            "arm_right_elbow_joint",
+            # "arm_left_shoulder_pitch_joint",
+            # "arm_left_shoulder_roll_joint",
+            # "arm_left_shoulder_yaw_joint",
+            # "arm_left_elbow_joint",
+            # "arm_right_shoulder_pitch_joint",
+            # "arm_right_shoulder_roll_joint",
+            # "arm_right_shoulder_yaw_joint",
+            # "arm_right_elbow_joint",
         ]
         self.action_scale_list = self.build_scale_list(self.cfg.robot.action_scale, self.dof_names)
         self.action_scale = torch.tensor(
@@ -776,14 +776,14 @@ class Z1AmpSymEnv29DOF(BaseEnv):
         joint_pos = src_pos[:, [
             0, 1, 2, 3, 4, 5, 
             6, 7, 8, 9, 10, 11,
-            12, 13, 14, 15, 
-            16, 17, 18, 19
+            # 12, 13, 14, 15, 
+            # 16, 17, 18, 19
         ]]
         joint_vel = src_vel[:, [
             0, 1, 2, 3, 4, 5, 
             6, 7, 8, 9, 10, 11,
-            12, 13, 14, 15, 
-            16, 17, 18, 19
+            # 12, 13, 14, 15, 
+            # 16, 17, 18, 19
         ]]
 
         num_body = len(self.key_pos_idx)

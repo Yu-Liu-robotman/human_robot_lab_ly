@@ -24,10 +24,12 @@ import torch
 import isaaclab.utils.math as math_utils
 from collections.abc import Sequence
 class AMPLoader:
+    # AMP 数据集关节数
     JOINT_POS_SIZE = 20
     JOINT_VEL_SIZE = 20
     JOINT_POS_MUJOCO_SIZE = 20
     JOINT_VEL_MUJOCO_SIZE = 20
+    # 
     JOINT_POSE_START_IDX = 0
     JOINT_POSE_END_IDX = JOINT_POSE_START_IDX + JOINT_POS_SIZE
     JOINT_VEL_START_IDX = JOINT_POSE_END_IDX
@@ -36,13 +38,15 @@ class AMPLoader:
     joint_mujoco_select = [
         0, 1, 2, 3, 4, 5, 
         6, 7, 8, 9, 10, 11,
-        12, 13, 14, 15, 
-        16, 17, 18, 19,
+        # 12, 13, 14, 15, 
+        # 16, 17, 18, 19,
+        # 20,21,22,23,
+        # 24,25,26,27,28
     ]
     
-    S_JOINT_POS_SIZE = 20
-    S_JOINT_VEL_SIZE = 20
-    S_END_EFFECTOR_POS_SIZE = 3*12
+    S_JOINT_POS_SIZE = 12
+    S_JOINT_VEL_SIZE = 12
+    S_END_EFFECTOR_POS_SIZE = 3*6  # 3 * KEY_POS_LIST 对应数量
     
     S_JOINT_POSE_START_IDX = 0
     S_JOINT_POSE_END_IDX = S_JOINT_POSE_START_IDX + S_JOINT_POS_SIZE
@@ -78,7 +82,7 @@ class AMPLoader:
         print(self.body_select)
         self.anchor_idx = all_names_list.index(anchor_name)
 
-        self.BODY_SIZE = len(all_names_list)
+        self.BODY_SIZE = 23
         self.BODY_POS_SIZE = self.BODY_SIZE * 3
         self.BODY_QUAT_SIZE = self.BODY_SIZE * 4
         self.BODY_LIN_VEL_SIZE = self.BODY_SIZE * 3

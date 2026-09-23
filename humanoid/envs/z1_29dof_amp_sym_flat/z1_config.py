@@ -22,7 +22,7 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
     RslRlPpoAlgorithmCfg,
     RslRlSymmetryCfg,
 )
-from humanoid.envs.z1_29dof_amp_sym_flat.mdp.symmetry import z129dof
+from humanoid.envs.z1_29dof_amp_sym_flat.mdp.symmetry import z129dof_12dofamp
 KEY_POS_LIST=[
     "leg_left_hip_pitch_link",
     "leg_right_hip_pitch_link",
@@ -30,12 +30,12 @@ KEY_POS_LIST=[
     "leg_right_knee_link",
     "leg_left_ankle_roll_link",
     "leg_right_ankle_roll_link",
-    "arm_left_shoulder_yaw_link",
-    "arm_right_shoulder_yaw_link",
-    "arm_left_elbow_link",
-    "arm_right_elbow_link",
-    "arm_left_hand_link",
-    "arm_right_hand_link"
+    # "arm_left_shoulder_yaw_link",
+    # "arm_right_shoulder_yaw_link",
+    # "arm_left_elbow_link",
+    # "arm_right_elbow_link",
+    # "arm_left_hand_link",
+    # "arm_right_hand_link"
 ]
 ANCHOR_NAME = "base_link"
 COMMAND_THRESHOLD = 0.1
@@ -270,9 +270,9 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         self.commands.heading_command = False
         self.experiment_name = "z1_29dof_flat"
         self.rl_version = 2.1
-        # 29dof 机器人共 29 个关节，策略只控 20 个（12 腿 + 8 臂）：
-        # num_actions = default_joint_pos.shape[1] - rand_dof_nums = 29 - 9 = 20
-        self.rand_dof_nums = 9
+        # 29dof 机器人共 29 个关节，策略只控 12 个（12 腿）：
+        # num_actions = default_joint_pos.shape[1] - rand_dof_nums = 29 - 17 = 12
+        self.rand_dof_nums = 17
         self.robot.action_scale = Z129DOF_ACTION_SCALE
         # Privileged information for Critic
         self.scene.privileged_info.enable_feet_info = False  # feet_pos + feet_vel (12 dim)
@@ -285,6 +285,7 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         self.domain_rand.events.push_robot.interval_range_s = (4.0, 8.0)
         self.domain_rand.events.push_robot.params["velocity_range"] = {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}
         self.scene.max_episode_length_s = 10
+
 @configclass
 class Z129DOFFlatAgentCfg(BaseAgentCfg):
     def __post_init__(self):
@@ -293,7 +294,7 @@ class Z129DOFFlatAgentCfg(BaseAgentCfg):
             use_data_augmentation=True,
             use_mirror_loss=True,
             mirror_loss_coeff=0.1, 
-            data_augmentation_func=z129dof.compute_symmetric_states
+            data_augmentation_func=z129dof_12dofamp.compute_symmetric_states
         )
         self.experiment_name = "z1_29dof_flat"
         self.wandb_project = "z1_29dof_flat"
@@ -383,9 +384,11 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     amp_num_frames = 4
     # amp_discr_hidden_dims = [1024, 512, 256]
     amp_discr_hidden_dims = [1024, 512]
-    min_normalized_std = [0.05] * 20
+    min_normalized_std = [0.05] * 12
     amp_body_names=KEY_POS_LIST
     amp_anchor_name=ANCHOR_NAME
+    # add* 12dof amp 
+    amp_use_leg12dof = True
 
 class Z129DOFAmpFlatSymEnvCfg(Z129DOFFlatEnvCfg):
     def __post_init__(self):
@@ -403,7 +406,7 @@ class Z129DOFAmpFlatSymAgentCfg(Z129DOFAmpFlatAgentCfg):
             use_data_augmentation=True,
             use_mirror_loss=True,
             mirror_loss_coeff=0.2,
-            data_augmentation_func=z129dof.compute_symmetric_states
+            data_augmentation_func=z129dof_12dofamp.compute_symmetric_states
         )
 
 
