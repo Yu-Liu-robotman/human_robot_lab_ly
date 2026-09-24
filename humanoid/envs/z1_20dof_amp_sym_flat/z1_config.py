@@ -30,12 +30,12 @@ KEY_POS_LIST=[
     "leg_right_knee_link",
     "leg_left_ankle_roll_link",
     "leg_right_ankle_roll_link",
-    # "arm_left_shoulder_yaw_link",
-    # "arm_right_shoulder_yaw_link",
-    # "arm_left_elbow_link",
-    # "arm_right_elbow_link",
-    # "arm_left_hand_link",
-    # "arm_right_hand_link"
+    "arm_left_shoulder_yaw_link",
+    "arm_right_shoulder_yaw_link",
+    "arm_left_elbow_link",
+    "arm_right_elbow_link",
+    "arm_left_hand_link",
+    "arm_right_hand_link"
 ]
 ANCHOR_NAME = "base_link"
 COMMAND_THRESHOLD = 0.1
@@ -53,8 +53,8 @@ class Z120DOFRewardCfg(RewardCfg):
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.005)
     dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-10.0)
     energy = RewTerm(func=mdp.energy, weight=-1e-3)
-    # body_orientation_l2 = RewTerm(func=mdp.body_orientation_l2, weight=-1.0, 
-    #     params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link")})
+    body_orientation_l2 = RewTerm(func=mdp.body_orientation_l2, weight=-1.0, 
+        params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link")})
     
     feet_air_time = RewTerm(
         func=mdp.adaptive_feet_air_time_positive_biped,
@@ -137,31 +137,31 @@ class Z120DOFRewardCfg(RewardCfg):
         },
     )  
     # add* 9月22号15:16 -> 参 考加入离散二阶差分逐强时间课程 -> 惩罚加速度突变抖动和顿挫
-    action_smoothness = RewTerm(
-        func=z1_mdp.action_smoothness_with_curriculum,
-        weight=-0.0001,
-        params={
-            "start_scale": 0.9,
-            "power": 0.8,
-            "interval_epochs": 200 * 24,
-        },
-    )  
+    # action_smoothness = RewTerm(
+    #     func=z1_mdp.action_smoothness_with_curriculum,
+    #     weight=-0.0001,
+    #     params={
+    #         "start_scale": 0.1,
+    #         "power": 0.8,
+    #         "interval_epochs": 200 * 24,
+    #     },
+    # )  
     # add* 原地踏步优化
     double_support_penalize = RewTerm(
         func=mdp.zero_double_support_penalize,
         weight=-2.0,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
-            "max_ds_time": 0.18,
+            "max_ds_time": 0.10,
             "force_threshold": 5.0,
         },
     )
     step_alternate_lift = RewTerm(
         func=z1_mdp.step_in_place_alternate_lift,
-        weight=0.5,
+        weight=1.0,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
-            "air_time_ref": 0.25,
+            "air_time_ref": 0.28,
             "contact_force_threshold": 5.0,
         },
     )
@@ -226,10 +226,20 @@ class Z120DOFRewardCfg(RewardCfg):
         },
     )
     dont_wait = RewTerm(func=mdp.dont_wait, weight=-0.75)
+    # add* 摆臂优化
+    joint_deviation_arms = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-0.5,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*"]
+            )
+        },
+    )
     # add* 落地后膝盖尽量打直
     knee_extend_on_contact = RewTerm(
         func=z1_mdp.knee_extend_on_contact_penalty,
-        weight=-0.3,
+        weight=-0.5,
         params={
             "sensor_cfg": SceneEntityCfg(
                 "contact_sensor",
@@ -242,21 +252,36 @@ class Z120DOFRewardCfg(RewardCfg):
                 preserve_order=True,
             ),
             "knee_slack": 0.05,
-            "contact_force_threshold": 10.0,
+            "contact_force_threshold": 5.0,
             "command_threshold": COMMAND_THRESHOLD,
             "include_turning": False,
         },
     )
-    # add* 摆臂优化
-    joint_deviation_arms = RewTerm(
-        func=mdp.joint_deviation_l1,
-        weight=-0.5,
+    # add* 轻柔的自然摆臂：按抬腿高度驱动对侧手臂（幅度小、速度慢）
+    arm_swing_alternation = RewTerm(
+        func=z1_mdp.arm_swing_alternation_penalty,
+        weight=-0.25,
         params={
             "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=[".*_shoulder_roll.*", ".*_shoulder_yaw.*"]
-            )
+                "robot",
+                joint_names=[
+                    "arm_left_shoulder_pitch_joint",
+                    "arm_right_shoulder_pitch_joint",
+                ],
+                body_names=[
+                    "leg_left_ankle_roll_link",
+                    "leg_right_ankle_roll_link",
+                ],
+                preserve_order=True,
+            ),
+            "target_arm_swing": 0.15,      # 原来 0.30 → 摆幅砍掉约一半
+            "swing_height_ref": 0.05,      # 原来 0.08 → 抬高门槛
+            "swing_height_eps": 0.03,      # 原来 0.02 → 更不容易误触发
+            "arm_vel_gain": 0.02,          # 新增：抑制甩臂速度
+            "command_threshold": 0.05,
         },
     )
+
 @configclass
 class Z120DOFTerminationCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
@@ -393,8 +418,8 @@ class Z120DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                             "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_medium_2_20dof.txt",
 
                             # 走转
-                            "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_left_segment_4707-4929.txt",
-                            "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_right_segment_4474-4696.txt",
+                            # "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_left_segment_4707-4929.txt",
+                            # "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_right_segment_4474-4696.txt",
 
                             # 后退
                             "humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/txt/20dof_back_segment_0351-0743.txt",
@@ -418,7 +443,8 @@ class Z120DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     min_normalized_std = [0.05] * 20
     amp_body_names=KEY_POS_LIST
     amp_anchor_name=ANCHOR_NAME
-    amp_loader = "z120dof_12dof"
+    # amp_loader = "z120dof_12dof"
+    amp_loader = "z120dof"
 
 class Z120DOFAmpFlatSymEnvCfg(Z120DOFFlatEnvCfg):
     def __post_init__(self):

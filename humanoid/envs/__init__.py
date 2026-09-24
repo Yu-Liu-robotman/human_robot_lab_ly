@@ -71,7 +71,8 @@ from humanoid.envs.z1_20dof_amp_sym_flat.z1_config import (
     Z120DOFAmpFlatSymEnvCfg,
     Z120DOFAmpFlatSymAgentCfg,
 )
-from humanoid.envs.z1_20dof_amp_sym_flat.z1_env_12dof import Z1AmpSymEnv20DOF
+from humanoid.envs.z1_20dof_amp_sym_flat.z1_env_20dof import Z1AmpSymEnv20DOF
+# from humanoid.envs.z1_20dof_amp_sym_flat.z1_env_12dof import Z1AmpSymEnv20DOF
 
 task_registry.register("z1_20dof_flat", Z1AmpSymEnv20DOF, Z120DOFFlatEnvCfg(), Z120DOFFlatAgentCfg())
 task_registry.register("z1_20dof_amp_flat", Z1AmpSymEnv20DOF, Z120DOFAmpFlatEnvCfg(), Z120DOFAmpFlatAgentCfg())

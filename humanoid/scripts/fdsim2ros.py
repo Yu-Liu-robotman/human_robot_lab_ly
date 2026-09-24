@@ -293,6 +293,19 @@ class HumaRobotSimRos(Node):
             )
         # viewer = mujoco_viewer.MujocoViewer(model, data)
         viewer = mujoco.viewer.launch_passive(model, data)
+        # ---- 相机自动追踪 base_link ----
+        base_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base_link")
+        if base_body_id >= 0:
+            # TRACKING 模式下相机的「注视点」锁在指定 body 上，
+            # 但鼠标仍可自由旋转/缩放（只是不再跟丢机器人）
+            viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+            viewer.cam.trackbodyid = int(base_body_id)
+            viewer.cam.distance = 3.0      # 相机到机器人的距离（m）
+            viewer.cam.azimuth = 135.0     # 水平方位角（度）
+            viewer.cam.elevation = -20.0   # 俯仰角（度，负值=从上往下看）
+        else:
+            print('[WARN] mujoco 模型里找不到 body "base_link"，相机保持自由视角')
+            
         target_q = np.zeros((param['num_actions']), dtype=np.double)
         self.action = np.zeros((param['num_actions']), dtype=np.double)
         self.last_action = np.zeros((param['num_actions']), dtype=np.double)

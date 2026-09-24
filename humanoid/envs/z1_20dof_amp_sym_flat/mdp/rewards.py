@@ -375,6 +375,40 @@ def knee_heading_alignment_penalty(
         gate = gate * (~turning).float()
     return torch.sum(err, dim=1) * gate
 
+def arm_swing_alternation_penalty(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg,        # joint_ids=[肩L, 肩R]；body_ids=[左踝, 右踝]
+    target_arm_swing: float = 0.18,   # 满抬腿时的摆幅(rad)。调小 = 更轻柔
+    swing_height_ref: float = 0.12,   # 抬到多高才算「满抬起」。调大 = 不轻易触发
+    swing_height_eps: float = 0.03,   # 低于此高度视为贴地
+    arm_vel_gain: float = 0.02,       # 手臂角速度惩罚 —— 「轻柔」的核心
+    command_threshold: float = 0.1,
+) -> torch.Tensor:
+    """轻柔的自然摆臂：按抬腿高度驱动对侧手臂，幅度小、速度慢"""
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    q = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[
+        :, asset_cfg.joint_ids
+    ]
+    qd_arm = asset.data.joint_vel[:, asset_cfg.joint_ids]
+    sh_l, sh_r = q[:, 0], q[:, 1]
+    foot_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]      # (N, 2) = [左, 右]
+    ground_ref = torch.min(foot_z, dim=1, keepdim=True)[0]
+    foot_h = foot_z - ground_ref
+
+    lift = torch.clamp((foot_h - swing_height_eps) / max(swing_height_ref, 1e-6), 0.0, 1.0)
+    lift_l, lift_r = lift[:, 0], lift[:, 1]
+
+    err = torch.abs(sh_l - target_arm_swing * lift_r) + torch.abs(
+        sh_r - target_arm_swing * lift_l
+    )
+    smooth = arm_vel_gain * torch.sum(qd_arm ** 2, dim=-1)
+
+    command = env.command_generator.command
+    moving = torch.linalg.vector_norm(command[:, :3], dim=1) > command_threshold
+
+    return (err + smooth) * moving.float()
+
 def knee_extend_on_contact_penalty(
     env: BaseEnv,
     sensor_cfg: SceneEntityCfg,
@@ -395,11 +429,16 @@ def knee_extend_on_contact_penalty(
         sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2] > contact_force_threshold
     ).float()                                                              # (N, 2)
     cost = torch.sum(err * contact, dim=-1)
-    command = env.command_generator.command
-    gate = (torch.linalg.vector_norm(command[:, :3], dim=1) > command_threshold).float()
-    if not include_turning:
-        turning = (torch.abs(command[:, 2]) > command_threshold) & (
-            torch.linalg.vector_norm(command[:, :2], dim=1) <= command_threshold
-        )
-        gate = gate * (~turning).float()
+
+    command = env.command_generator.command          # (N, 3) = [vx, vy, wz]
+    if include_turning:
+        # 放宽：只要指令不是「纯站立」就生效（保留原行为，方便随时切回去）
+        gate = (torch.linalg.vector_norm(command[:, :3], dim=1) > command_threshold).float()
+    else:
+        # 仅直行：必须是前进，且横向、转向分量都低于阈值
+        gate = (
+            (command[:, 0] > command_threshold)
+            & (torch.abs(command[:, 1]) <= command_threshold)
+            & (torch.abs(command[:, 2]) <= command_threshold)
+        ).float()
     return cost * gate

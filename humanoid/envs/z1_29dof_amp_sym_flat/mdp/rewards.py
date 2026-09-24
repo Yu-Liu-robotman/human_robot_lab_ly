@@ -335,6 +335,39 @@ def feet_impact_vel(
 
     return torch.sum(proximity * approach, dim=-1)
 
+def feet_impact_vel_soft(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg,
+    height_scale: float = 0.04,
+    free_descend_vel: float = 0.15,
+    command_threshold: float = 0.1,
+    include_turning: bool = False,
+) -> torch.Tensor:
+    """软着陆惩罚：只在「真的贴近地面」且「下坠速度超过 free_descend_vel」时才罚"""
+    asset: Articulation = env.scene[asset_cfg.name]
+    foot_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]         # (N, F)
+    foot_vz = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, 2]    # (N, F)
+
+    # ---- 地面参考：优先用「支撑腿地形高度」（由 env._compute_forward_obstacle_height 维护）----
+    terrain_h = getattr(env, "terrain_height_at_feet", None)
+    scanner_on = getattr(env.cfg.scene.height_scanner, "enable_height_scan", False)
+    if terrain_h is not None and scanner_on:
+        ground_z = terrain_h                                          # (N, F)，与 [左, 右] 对齐
+    else:
+        ground_z = torch.min(foot_z, dim=-1, keepdim=True)[0]
+    height = torch.clamp(foot_z - ground_z, min=0.0)                  # 夹掉负值
+
+    proximity = torch.exp(-height / max(height_scale, 1e-6))
+    impact = torch.clamp(-foot_vz - free_descend_vel, min=0.0)        # relu(-vz - v_free)
+
+    cost = torch.sum(proximity * impact, dim=-1)
+
+    command = env.command_generator.command                           # (N,3) = [vx, vy, wz]
+    if include_turning:
+        return cost
+    turning = torch.abs(command[:, 2]) > command_threshold            # 原地旋转 + 走转
+    return cost * (~turning).float()
+
 def knee_heading_alignment_penalty(
     env: BaseEnv,
     asset_cfg: SceneEntityCfg,          # body_names=[".*_knee_link", ".*_ankle_roll_link"]
@@ -374,3 +407,71 @@ def knee_heading_alignment_penalty(
         )
         gate = gate * (~turning).float()
     return torch.sum(err, dim=1) * gate
+
+def arm_swing_alternation_penalty(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg,        # joint_ids=[肩L, 肩R]；body_ids=[左踝, 右踝]
+    target_arm_swing: float = 0.18,   # 满抬腿时的摆幅(rad)。调小 = 更轻柔
+    swing_height_ref: float = 0.12,   # 抬到多高才算「满抬起」。调大 = 不轻易触发
+    swing_height_eps: float = 0.03,   # 低于此高度视为贴地
+    arm_vel_gain: float = 0.02,       # 手臂角速度惩罚 —— 「轻柔」的核心
+    command_threshold: float = 0.1,
+) -> torch.Tensor:
+    """轻柔的自然摆臂：按抬腿高度驱动对侧手臂，幅度小、速度慢"""
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    q = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[
+        :, asset_cfg.joint_ids
+    ]
+    qd_arm = asset.data.joint_vel[:, asset_cfg.joint_ids]
+    sh_l, sh_r = q[:, 0], q[:, 1]
+    foot_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]      # (N, 2) = [左, 右]
+    ground_ref = torch.min(foot_z, dim=1, keepdim=True)[0]
+    foot_h = foot_z - ground_ref
+
+    lift = torch.clamp((foot_h - swing_height_eps) / max(swing_height_ref, 1e-6), 0.0, 1.0)
+    lift_l, lift_r = lift[:, 0], lift[:, 1]
+
+    err = torch.abs(sh_l - target_arm_swing * lift_r) + torch.abs(
+        sh_r - target_arm_swing * lift_l
+    )
+    smooth = arm_vel_gain * torch.sum(qd_arm ** 2, dim=-1)
+
+    command = env.command_generator.command
+    moving = torch.linalg.vector_norm(command[:, :3], dim=1) > command_threshold
+
+    return (err + smooth) * moving.float()
+
+def knee_extend_on_contact_penalty(
+    env: BaseEnv,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg,
+    knee_slack: float = 0.05,            # 宽松度 rad
+    contact_force_threshold: float = 5.0,
+    command_threshold: float = 0.1,
+    include_turning: bool = False,
+) -> torch.Tensor:
+    """落地后（脚触地时）膝盖尽量打直"""
+    sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    knee_abs = asset.data.joint_pos[:, asset_cfg.joint_ids]                # (N, 2)
+    knee_default = asset.data.default_joint_pos[:, asset_cfg.joint_ids]    # (N, 2)
+    err = torch.relu(knee_abs - (knee_default + knee_slack))               # 弯过头才罚
+    contact = (
+        sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2] > contact_force_threshold
+    ).float()                                                              # (N, 2)
+    cost = torch.sum(err * contact, dim=-1)
+
+    command = env.command_generator.command          # (N, 3) = [vx, vy, wz]
+    if include_turning:
+        # 放宽：只要指令不是「纯站立」就生效（保留原行为，方便随时切回去）
+        gate = (torch.linalg.vector_norm(command[:, :3], dim=1) > command_threshold).float()
+    else:
+        # 仅直行：必须是前进，且横向、转向分量都低于阈值
+        gate = (
+            (command[:, 0] > command_threshold)
+            & (torch.abs(command[:, 1]) <= command_threshold)
+            & (torch.abs(command[:, 2]) <= command_threshold)
+        ).float()
+    return cost * gate
