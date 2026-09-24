@@ -317,6 +317,35 @@ class Z1AmpSymEnv29DOF(BaseEnv):
         self.feet_vel_in_body = torch.zeros(self.num_envs, num_feet, 3, device=self.device)
         self.forward_obstacle_height = torch.zeros(self.num_envs, 2, device=self.device)
         self.terrain_height_at_feet = torch.zeros(self.num_envs, 2, device=self.device)
+
+        # ---- 上半身随机运动：手臂动，躯干锁死 ----
+        num_joints = self.robot.data.default_joint_pos.shape[1]        # 29
+        controlled = torch.zeros(num_joints, dtype=torch.bool, device=self.device)
+        controlled[torch.as_tensor(self.dof_ids, dtype=torch.long, device=self.device)] = True
+        self.upper_body_joint_ids = torch.arange(num_joints, device=self.device)[~controlled]
+        self.upper_body_joint_names = [
+            self.robot.data.joint_names[i] for i in self.upper_body_joint_ids.tolist()
+        ]
+        _mcfg = self.cfg.upper_body_motion
+        self.upper_body_amplitude = torch.tensor(
+            [
+                next((v for k, v in _mcfg.amplitudes.items() if k in name), _mcfg.default_amplitude)
+                for name in self.upper_body_joint_names
+            ],
+            device=self.device,
+            dtype=torch.float,
+        )
+        self.upper_body_offset = torch.zeros(
+            self.num_envs, self.upper_body_joint_ids.numel(), device=self.device
+        )
+        _n_active = int((self.upper_body_amplitude > 0).sum())
+        print(
+            f"[upper-body motion] {self.upper_body_joint_ids.numel()} joints "
+            f"({_n_active} active), enable={_mcfg.enable}, scale={_mcfg.scale}, "
+            f"start_scale={_mcfg.start_scale}, warmup_steps={_mcfg.warmup_steps}\n"
+            f"  names     = {self.upper_body_joint_names}\n"
+            f"  amplitude = {[round(v, 3) for v in self.upper_body_amplitude.tolist()]}"
+        )
         self.init_obs_buffer()
 
     def compute_current_observations(self):
@@ -581,9 +610,54 @@ class Z1AmpSymEnv29DOF(BaseEnv):
             )
             self.forward_obstacle_height[:, i] = max_height.clamp(min=0.0, max=0.5)
 
+    def _upper_body_current_amplitude(self) -> torch.Tensor:
+        """当前生效的上半身关节幅值(rad)，已含 enable / 全局 scale / 幅度课程。
+
+        enable=False 时返回全 0 → reset 采样与 step 写入都退化为 default_joint_pos，
+        即真正「锁死在 default」（这是逃生开关，必须生效）。
+        """
+        mcfg = self.cfg.upper_body_motion
+        if not mcfg.enable:
+            return torch.zeros_like(self.upper_body_amplitude)
+        ramp = 1.0
+        if mcfg.warmup_steps > 0:
+            decimation = max(1, int(self.cfg.sim.decimation))
+            steps = int(self.sim_step_counter) // decimation
+            alpha = min(1.0, steps / float(mcfg.warmup_steps))
+            ramp = mcfg.start_scale + (1.0 - mcfg.start_scale) * alpha
+        return self.upper_body_amplitude * float(mcfg.scale) * ramp
+
+    def _update_upper_body_motion(self):
+        """上半身（策略不控）慢变随机目标角：离散 OU 过程 + 软限位。
+
+        连续、平滑、均值回归到 default 位姿；稳态标准差 = 0.5 * 幅值，
+        既有足够变化又不会长期贴在边界上。
+        """
+        mcfg = self.cfg.upper_body_motion
+        if not mcfg.enable or self.upper_body_joint_ids.numel() == 0:
+            return
+
+        amp = self._upper_body_current_amplitude()                     # (J,)
+        dt = self.step_dt
+        sigma = 0.5 * amp * np.sqrt(2.0 * mcfg.theta)
+        self.upper_body_offset += (
+            -mcfg.theta * self.upper_body_offset * dt
+            + sigma * np.sqrt(dt) * torch.randn_like(self.upper_body_offset)
+        )
+        self.upper_body_offset.clamp_(-amp, amp)
+
+        if "log" not in self.extras:
+            self.extras["log"] = {}
+        self.extras["log"]["upper_body/amp_mean"] = float(amp.mean())
+
     def reset(self, env_ids):
         if len(env_ids) == 0:
             return
+        # 每个 episode 重新采样上半身初始姿态 → 覆盖不同的起始构型
+        _amp = self._upper_body_current_amplitude().unsqueeze(0)
+        self.upper_body_offset[env_ids] = (
+            torch.rand(len(env_ids), self.upper_body_offset.shape[1], device=self.device) * 2.0 - 1.0
+        ) * _amp
         self.left_contact_time[env_ids]  = 0.0
         self.right_contact_time[env_ids] = 0.0
         self.ds_time[env_ids]            = 0.0
@@ -629,6 +703,18 @@ class Z1AmpSymEnv29DOF(BaseEnv):
         all_actions = torch.zeros(self.num_envs, self.num_actions+self.cfg.rand_dof_nums, dtype=torch.float, device=self.device)
         all_actions[:, self.dof_ids] = processed_actions.clone()
         all_actions += self.robot.data.default_joint_pos
+        # 上半身 关节：default + 慢变随机偏移（不再恒等于 default）
+        self._update_upper_body_motion()
+        if self.upper_body_joint_ids.numel() > 0:
+            upper_target = (
+                self.robot.data.default_joint_pos[:, self.upper_body_joint_ids]
+                + self.upper_body_offset
+            )
+            all_actions[:, self.upper_body_joint_ids] = torch.clamp(
+                upper_target,
+                self.robot.data.soft_joint_pos_limits[:, self.upper_body_joint_ids, 0],
+                self.robot.data.soft_joint_pos_limits[:, self.upper_body_joint_ids, 1],
+            )
         
         for _ in range(self.cfg.sim.decimation):
             self.sim_step_counter += 1

@@ -1,11 +1,13 @@
 import math
 
+from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
 
 import humanoid.mdp as mdp
 import humanoid.envs.z1_29dof_amp_sym_flat.mdp as z1_mdp
+import humanoid.envs.z1_29dof_amp_sym_flat.mdp.events as z1_events
 from humanoid.assets.z1.z1_29dof import Z129DOF, Z129DOF_ACTION_SCALE, KDS, KPS
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from humanoid.envs.base.base_env_config import (  # noqa:F401
@@ -30,12 +32,24 @@ KEY_POS_LIST=[
     "leg_right_knee_link",
     "leg_left_ankle_roll_link",
     "leg_right_ankle_roll_link",
-    # "arm_left_shoulder_yaw_link",
-    # "arm_right_shoulder_yaw_link",
-    # "arm_left_elbow_link",
-    # "arm_right_elbow_link",
-    # "arm_left_hand_link",
-    # "arm_right_hand_link"
+]
+UPPER_BODY_BODY_NAMES = [
+    # 左臂 7
+    "arm_left_shoulder_pitch_link",
+    "arm_left_shoulder_roll_link",
+    "arm_left_shoulder_yaw_link",
+    "arm_left_elbow_link",
+    "arm_left_wrist_roll_link",
+    "arm_left_wrist_pitch_link",
+    "arm_left_wrist_yaw_link",
+    # 右臂 7
+    "arm_right_shoulder_pitch_link",
+    "arm_right_shoulder_roll_link",
+    "arm_right_shoulder_yaw_link",
+    "arm_right_elbow_link",
+    "arm_right_wrist_roll_link",
+    "arm_right_wrist_pitch_link",
+    "arm_right_wrist_yaw_link",
 ]
 ANCHOR_NAME = "base_link"
 COMMAND_THRESHOLD = 0.1
@@ -51,7 +65,12 @@ class Z129DOFRewardCfg(RewardCfg):
     dof_torques_l2 = RewTerm(func=mdp.applied_torque_limits, weight=-0.01)
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.0e-7)
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.005)
-    dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-10.0)
+    # 只约束 12 个腿关节：上半身 17 关节策略不控，被负载压到软限位不该被重罚
+    dof_pos_limits = RewTerm(
+        func=mdp.joint_pos_limits,
+        weight=-10.0,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["leg_.*_joint"])},
+    )
     energy = RewTerm(func=mdp.energy, weight=-1e-3)
     body_orientation_l2 = RewTerm(func=mdp.body_orientation_l2, weight=-1.0, 
         params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link")})
@@ -275,6 +294,28 @@ class Z129DOFTerminationCfg:
     )
 
 @configclass
+class UpperBodyMotionCfg:
+    """手臂（策略不控制的 14 个关节）随机大幅运动配置"""
+    enable: bool = True         # 是否启用上半身随机运动
+    scale: float = 1.0          # 全局幅值系数
+    theta: float = 1.5          # OU 回归强度：越小越慢、越飘
+    start_scale: float = 0.15   # 幅度课程起点（仅 warmup_steps > 0 时生效）
+    warmup_steps: int = 2000 * 24  # 控制步数；0 = 不热身，直接满幅
+    # 只有匹配 amplitudes 的关节会动；未匹配到的用这个值 → 0 = 保持 default 锁死（躯干）
+    default_amplitude: float = 0.0
+    # 关节名关键字 → 幅值(rad)
+    amplitudes: dict = {
+        "shoulder_pitch": 1.00,   # 抬臂方向，幅值最大
+        "shoulder_roll": 0.45,
+        "shoulder_yaw": 0.35,
+        "elbow": 0.70,
+        "wrist_roll": 0.30,
+        "wrist_pitch": 0.30,
+        "wrist_yaw": 0.30,
+    }
+
+
+@configclass
 class Z129DOFFlatEnvCfg(BaseEnvCfg):
     kds = KDS
     kps = KPS
@@ -300,10 +341,11 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         self.commands.heading_command = False
         self.experiment_name = "z1_29dof_flat"
         self.rl_version = 2.1
-        # 29dof 机器人共 29 个关节，策略只控 12 个（12 腿）：
-        # num_actions = default_joint_pos.shape[1] - rand_dof_nums = 29 - 17 = 12
+        # 策略只控 12 个腿关节，其余关节由 default + 扰动驱动。
         self.rand_dof_nums = 17
         self.robot.action_scale = Z129DOF_ACTION_SCALE
+        # 上半身随机大幅运动；
+        self.upper_body_motion = UpperBodyMotionCfg()
         # Privileged information for Critic
         self.scene.privileged_info.enable_feet_info = False  # feet_pos + feet_vel (12 dim)
         self.scene.privileged_info.enable_feet_contact_force = False  # contact force (6 dim)
@@ -315,6 +357,34 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         self.domain_rand.events.push_robot.interval_range_s = (4.0, 8.0)
         self.domain_rand.events.push_robot.params["velocity_range"] = {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}
         self.scene.max_episode_length_s = 10
+        # add* 手臂质量扰动：14 根手臂连杆每根加一点质量（一次采样，全程固定）
+        self.domain_rand.events.upper_body_payload = EventTerm(
+            func=mdp.randomize_rigid_body_mass,
+            mode="startup",
+            params={
+                "asset_cfg": SceneEntityCfg(
+                    "robot", body_names=UPPER_BODY_BODY_NAMES, preserve_order=True
+                ),
+                "mass_distribution_params": (0.5, 1.5),   # kg/body → 14 根合计 1.4~7.0 kg
+                "operation": "add",
+            },
+        )
+        # add* 手臂负载等效力（世界系：重力 + 横向摆动 + 随机推力，自动均摊到 14 根手臂连杆）
+        self.domain_rand.events.upper_body_load = EventTerm(
+            func=z1_events.apply_payload_wrench,
+            mode="interval",
+            interval_range_s=(0.25, 0.6),      # 0.25~0.6s 换一次摆动方向
+            params={
+                "asset_cfg": SceneEntityCfg(
+                    "robot", body_names=UPPER_BODY_BODY_NAMES, preserve_order=True
+                ),
+                "total_mass": (1.0, 6.0),      # 整条手臂链的总负载(kg)，自动均摊
+                "lateral_gain": 0.25,          # 横向摆动 ≈ 25% 重力
+                "tilt_gain": 0.05,
+                "push_range": (-2.0, 2.0),     # 每连杆每轴 ±2N 随机推力（世界系 xy）
+                "push_z_range": (-1.0, 1.0),   # z 单独给，避免过大向上力
+            },
+        )
 
 @configclass
 class Z129DOFFlatAgentCfg(BaseAgentCfg):
