@@ -95,13 +95,14 @@ class AMPLoader:
             raise ValueError(f"num_frames 至少为 2（当前 {self.num_frames}），否则无法构成时间窗口。")
         all_names_list = list(self.DATASET_BODY_NAMES)   # ← 用数据集自己的顺序，不用机器人 body_names
         self.body_select = [all_names_list.index(n) for n in body_names]
+        print(self.body_select)
         self.anchor_idx = all_names_list.index(anchor_name)
         print(
             f"[AMPLoader] body_select={self.body_select}（数据集下标）, "
             f"anchor_idx={self.anchor_idx}（{anchor_name}）"
         )
 
-        self.BODY_SIZE = 23
+        self.BODY_SIZE = len(self.DATASET_BODY_NAMES) # 数据集txt对应的body数量
         self.BODY_POS_SIZE = self.BODY_SIZE * 3
         self.BODY_QUAT_SIZE = self.BODY_SIZE * 4
         self.BODY_LIN_VEL_SIZE = self.BODY_SIZE * 3

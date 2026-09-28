@@ -1,5 +1,18 @@
 """fdrobot sim2sim with ros2 topics."""
+"""
+# 关（默认，行为跟现在完全一样）
+python3 humanoid/scripts/fdsim2ros.py --experiment_name z1_29dof_amp_sym_flat
 
+# 开：复刻训练的甩手（肩 ±1.0rad、肘 ±0.7、腕 ±0.3，躯干仍 0）
+python3 humanoid/scripts/fdsim2ros.py --experiment_name z1_29dof_amp_sym_flat --ub_rand
+
+# 加码：幅值 ×1.5 + 每根手臂连杆随机 +0.1~0.2 kg（14 根约 +2 kg）
+python3 humanoid/scripts/fdsim2ros.py --experiment_name z1_29dof_amp_sym_flat \
+    --ub_rand --ub_amp 1.5 --ub_payload 0.2
+
+# 只压质量、不甩手（隔离「负重」这一个变量）
+python3 humanoid/scripts/fdsim2ros.py --experiment_name z1_29dof_amp_sym_flat --ub_payload 0.3
+"""
 import math
 import os
 print(os.getenv('PYTHONPATH'))
@@ -72,20 +85,20 @@ def keyboard_control(key):
     """."""
     if key == '8':
         cmd.vx = cmd.vx + 0.05
-        if cmd.vx > 3.0:
-            cmd.vx = 3.0
+        if cmd.vx > 1.0:
+            cmd.vx = 1.0
     if key == '2':
         cmd.vx = cmd.vx - 0.05
         if cmd.vx < -0.6:
             cmd.vx = -0.6
     if key == '6':
         cmd.dyaw = cmd.dyaw - 0.05
-        if cmd.dyaw < -1.0:
-            cmd.dyaw = -1.0
+        if cmd.dyaw < -0.6:
+            cmd.dyaw = -0.6
     if key == '4':
         cmd.dyaw = cmd.dyaw + 0.05
-        if cmd.dyaw > 1.0:
-            cmd.dyaw = 1.0
+        if cmd.dyaw > 0.6:
+            cmd.dyaw = 0.6
             
     if key == '7':
         cmd.vy = cmd.vy + 0.1
@@ -168,6 +181,11 @@ class HumaRobotSimRos(Node):
 
         self.rob_state_publisher_ = self.create_publisher(Twist, 'rob_vel', 10)
 
+        # 上半身扰动开关（由 __main__ 用命令行覆盖）
+        self.ub_rand = False
+        self.ub_amp = 1.0
+        self.ub_theta = 1.5
+        self.ub_payload = 0.0
 
     def get_obs(self, data):
         """Extracts an observation from the mujoco data structure."""
@@ -325,48 +343,92 @@ class HumaRobotSimRos(Node):
 
         count_lowlevel = 0
 
-        pd_kps = np.array(cfg.robot_config.kps, dtype=np.double)
-        pd_kds = np.array(cfg.robot_config.kds, dtype=np.double)
-        tau_limit = np.array(cfg.robot_config.tau_limit, dtype=np.double)
-
         ref_time = time.time()
         self.tau = np.zeros((mj_joint_num), dtype=np.double)
         self.step_sycle_time = param['cycle_time']
         self.default_joint_pos = param['default_joint_pos']
-        self.all_default_joint_pos = np.array([
-            -0.03, 0.0, 0.0, 0.1, -0.07, 0.0,
-            -0.03, 0.0, 0.0, 0.1, -0.07, 0.0,
-            # 0, 0, 0,
-            0.2, 0.20, 0, 1.1,
-            0.2, -0.20, 0, 1.1, 
-        ])
-        kps = np.array([ 100, 80, 80, 100, 40, 30,
-                100, 80, 80, 100, 40, 30,
-                # 400, 200, 1160,
-                100, 100, 100, 100, 
-                100, 100, 100, 100, 
-            ])
-        kds = np.array([ 10, 8, 8, 10, 4, 3, 
-                10, 8, 8, 10, 4, 3,
-                # 20, 20, 20, 
-                5, 5, 5, 5,
-                5, 5, 5, 5,
-            ])
-        # kps = [400] * 20
-        # kds = [40] * 20
-        tau_limit = [100, 75, 75, 100, 50, 25,
-                     100, 75, 75, 100, 50, 25,
-                    #  60, 60, 50,
-                     60, 60, 30, 30,
-                     60, 60, 30, 30,
-                    ]
-        # tau_limit=[150]*23
-        print("self.kp:", param["kp"])
-        print("self.dof_ids:", dof_ids)
-        kps[dof_ids] = np.array(param["kp"])
-        kds[dof_ids] = np.array(param["kd"])
-        self.all_default_joint_pos[dof_ids] = np.array(param["default_joint_pos"])
-        print("self.all_default_joint_pos:", self.all_default_joint_pos)
+
+        INIT_DEFAULT = {
+            "arm_left_shoulder_pitch_joint": 0.2, "arm_left_shoulder_roll_joint": 0.2,
+            "arm_left_shoulder_yaw_joint": 0.0, "arm_left_elbow_joint": 1.1,
+            "arm_right_shoulder_pitch_joint": 0.2, "arm_right_shoulder_roll_joint": -0.2,
+            "arm_right_shoulder_yaw_joint": 0.0, "arm_right_elbow_joint": 1.1,
+        }
+        LEG_TAU = {"hip_pitch": 100.0, "knee": 100.0, "hip_roll": 75.0,
+                   "hip_yaw": 75.0, "ankle_pitch": 50.0, "ankle_roll": 25.0}
+        _nf, _r = 2.0 * np.pi * 10.0, 2.0
+        LOCK = {"torso_yaw_joint": (200.0, 13.0, 75.0),
+                "torso_pitch_joint": (200.0, 13.0, 50.0),
+                "torso_roll_joint": (1160.0, 75.0, 50.0),
+                "wrist": (30.0, 2.0, 30.0),
+                "shoulder_pitch": (0.008 * _nf ** 2, 2 * _r * 0.008 * _nf, 50.0),
+                "shoulder_roll": (0.008 * _nf ** 2, 2 * _r * 0.008 * _nf, 50.0),
+                "shoulder_yaw": (0.004374 * _nf ** 2, 2 * _r * 0.004374 * _nf, 25.0),
+                "elbow": (0.004374 * _nf ** 2, 2 * _r * 0.004374 * _nf, 25.0)}
+
+        def lock_gains(nm):
+            for key, val in LOCK.items():
+                if key in nm:
+                    return val
+            return 100.0, 5.0, 60.0
+
+        name2idx = {nm: k for k, nm in enumerate(joint_names)}
+        idx = [name2idx[nm] for nm in dof_names]
+        assert idx == list(dof_ids), f'关节名映射不一致: {idx} vs {dof_ids}'
+        assert len(joint_names) == mj_joint_num, f'{len(joint_names)} != {mj_joint_num}'
+
+        kps = np.array([lock_gains(nm)[0] for nm in joint_names], dtype=np.double)
+        kds = np.array([lock_gains(nm)[1] for nm in joint_names], dtype=np.double)
+        tau_limit = np.array([lock_gains(nm)[2] for nm in joint_names], dtype=np.double)
+        kps[idx] = param["kp"]
+        kds[idx] = param["kd"]
+        for k, nm in zip(idx, dof_names):
+            key = next((key for key in LEG_TAU if key in nm), None)
+            if key is not None:
+                tau_limit[k] = LEG_TAU[key]
+
+        self.all_default_joint_pos = np.array(
+            [model.qpos0[model.jnt_qposadr[i]] for i in range(1, model.njnt)], dtype=np.double
+        )
+        for nm, val in INIT_DEFAULT.items():
+            self.all_default_joint_pos[name2idx[nm]] = val
+        self.all_default_joint_pos[idx] = param["default_joint_pos"]
+
+        locked = [nm for nm in joint_names if nm not in set(dof_names)]
+        print(f"受控 {len(dof_names)} 个: {dof_names}")
+        print(f"锁死 {len(locked)} 个: {locked}")
+
+        # ---- 上半身随机扰动：复刻训练里的 OU 过程（默认关，锁死在 INIT_DEFAULT）----
+        UB_AMP = {"shoulder_pitch": 1.00, "shoulder_roll": 0.45, "shoulder_yaw": 0.35,
+                  "elbow": 0.70, "wrist_roll": 0.30, "wrist_pitch": 0.30, "wrist_yaw": 0.30}
+        ub_idx = [k for k, nm in enumerate(joint_names) if nm not in set(dof_names)]
+        ub_jid = [k + 1 for k in ub_idx]                 # joint_names[k] ↔ model 关节 k+1（0 是 free joint）
+        ub_amp = np.zeros(mj_joint_num)
+        for k in ub_idx:
+            nm = joint_names[k]
+            ub_amp[k] = next((v for key, v in UB_AMP.items() if key in nm), 0.0) * self.ub_amp
+        ub_offset = np.zeros(mj_joint_num)
+        ub_dt = cfg.sim_config.dt * cfg.sim_config.decimation
+        ub_sigma = 0.5 * ub_amp * np.sqrt(2.0 * self.ub_theta)
+        ub_lo = np.array([model.jnt_range[j][0] for j in ub_jid]) if ub_jid else np.zeros(0)
+        ub_hi = np.array([model.jnt_range[j][1] for j in ub_jid]) if ub_jid else np.zeros(0)
+        if self.ub_rand:
+            if not ub_idx:
+                print("[WARN] 没有「策略不控」的关节，上半身随机扰动不会生效")
+            else:
+                show = {joint_names[k]: round(ub_amp[k], 2) for k in ub_idx if ub_amp[k] > 0}
+                print(f"[INFO] 上半身随机扰动 ON: amp×{self.ub_amp}, theta={self.ub_theta}, 幅值(rad)={show}")
+        else:
+            print("[INFO] 上半身随机扰动 OFF（锁死在默认位）")
+
+        if self.ub_payload > 0:
+            added = 0.0
+            for b in range(model.nbody):
+                if (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, b) or "").startswith("arm_"):
+                    m_add = np.random.uniform(0.5 * self.ub_payload, self.ub_payload)
+                    model.body_mass[b] += m_add
+                    added += m_add
+            print(f"[INFO] 手臂随机质量: 共 +{added:.2f} kg（0.5×~1.0× {self.ub_payload} kg/body）")
 
         pd_kps = np.array(kps, dtype=np.double)
         pd_kds = np.array(kds, dtype=np.double)
@@ -397,12 +459,21 @@ class HumaRobotSimRos(Node):
                     target_q = self.rl_policy_forward(param=param, policy=policy, q=(a_q-self.default_joint_pos), dq=a_dq, waist_orient_quat=quat,
                                                       waist_omega=omega, torque_foot=force, force_foot=force_foot,
                                                       lin_vel=lin_vel)
+                    if self.ub_rand:
+                        ub_offset += (-self.ub_theta * ub_offset * ub_dt
+                                      + ub_sigma * np.sqrt(ub_dt) * np.random.randn(mj_joint_num))
+                        ub_offset = np.clip(ub_offset, -ub_amp, ub_amp)
                 # 低级控制
                 all_target_dq = np.zeros((mj_joint_num), dtype=np.double)
                 
                 all_target_q = np.zeros((mj_joint_num), dtype=np.double)
                 all_target_q[dof_ids] = target_q
                 all_target_q += self.all_default_joint_pos
+                if self.ub_rand and ub_idx:
+                    for n, k in enumerate(ub_idx):
+                        if ub_amp[k] > 0.0:
+                            all_target_q[k] = np.clip(self.all_default_joint_pos[k] + ub_offset[k],
+                                                      ub_lo[n] + 0.05, ub_hi[n] - 0.05)
                 # Generate PD control
                 self.tau = self.pd_control(all_target_q, q, pd_kps, all_target_dq, dq, pd_kds)  # Calc torques
                 self.tau = np.clip(self.tau, -tau_limit, tau_limit)
@@ -716,6 +787,10 @@ if __name__ == '__main__':
     parser.add_argument('--experiment_name', type=str, required=False, help='param for model')
     parser.add_argument('--load_run', type=str, required=False, help='param for model')
     parser.add_argument('--use_local_cfg', action='store_true', required=False, help='use local source code cfg')
+    parser.add_argument('--ub_rand', action='store_true', help='上半身随机扰动（OU，复刻 Isaac 训练）')
+    parser.add_argument('--ub_amp', type=float, default=1.0, help='扰动幅值倍数：1.0 = 训练表')
+    parser.add_argument('--ub_theta', type=float, default=1.5, help='OU 回归强度：训练=1.5，越小越飘')
+    parser.add_argument('--ub_payload', type=float, default=0.0, help='每根手臂连杆随机加质量上限(kg)，0=关')
 
     args = parser.parse_args()
 
@@ -777,6 +852,10 @@ if __name__ == '__main__':
         data = yaml.load(yaml_file, Loader=yaml.FullLoader)
     param = data["rl"]
     node = HumaRobotSimRos('fdhumarobot_labros' + experiment_name)
+    node.ub_rand = args.ub_rand
+    node.ub_amp = args.ub_amp
+    node.ub_theta = args.ub_theta
+    node.ub_payload = args.ub_payload
     node.run_mujoco(policy, param, cfg)
     node.destroy_node()
     rclpy.shutdown()

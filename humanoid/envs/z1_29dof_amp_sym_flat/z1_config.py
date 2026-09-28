@@ -80,8 +80,8 @@ class Z129DOFRewardCfg(RewardCfg):
         weight=1.0,  # 1.0
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "low_speed_threshold": 0.20, # 0.35
-            "high_speed_threshold": 0.5, # 0.6
+            "low_speed_threshold": 0.15, # 0.35
+            "high_speed_threshold": 0.35, # 0.6
             "stand_cmd": True,
             "command_threshold": COMMAND_THRESHOLD
         },
@@ -124,12 +124,12 @@ class Z129DOFRewardCfg(RewardCfg):
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
             "contact_height": 0.037,
-            "target_clearance": 0.077,
+            "target_clearance": 0.067,
             "minimum_air_time": 0.13,
             "maximum_air_time": 0.35,
             "minimum_support_time": 0.04,
             "minimum_speed": COMMAND_THRESHOLD,
-            "maximum_forward_speed": 0.25,
+            "maximum_forward_speed": 1.0,
         },
     )
     # add* 脚掌偏航对齐 + 脚掌偏航枢轴速度约束 = 抑制扭脚行为
@@ -180,7 +180,7 @@ class Z129DOFRewardCfg(RewardCfg):
         weight=1.0,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
-            "air_time_ref": 0.28,
+            "air_time_ref": 0.25,
             "contact_force_threshold": 5.0,
         },
     )
@@ -194,8 +194,8 @@ class Z129DOFRewardCfg(RewardCfg):
             "gap_tolerance": 0.010,
             "midline_tolerance": 0.02,
             "command_threshold": COMMAND_THRESHOLD,
-            "max_gap": 0.21,
-            "include_turning": False,
+            "max_gap": 0.3,
+            "include_turning": True,
         },
     )
     feet_flat_landing = RewTerm(
@@ -230,8 +230,8 @@ class Z129DOFRewardCfg(RewardCfg):
                 body_names=["leg_left_ankle_roll_link", "leg_right_ankle_roll_link"],
                 preserve_order=True,
             ),
-            "height_scale": 0.04,
-            "free_descend_vel": 0.08,     # 新增
+            "height_scale": 0.02,
+            "free_descend_vel": 0.15,     # 新增
             "command_threshold": COMMAND_THRESHOLD,
             "include_turning": False,
         },
@@ -273,7 +273,16 @@ class Z129DOFRewardCfg(RewardCfg):
             "include_turning": False,
         },
     )
-
+    # add* 两脚最小间距（防撞）：低于 0.10 m 重罚，站立/行走/转弯全程生效
+    feet_min_gap = RewTerm(
+        func=z1_mdp.feet_min_gap_penalty,
+        weight=-3.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=[".*_ankle_roll_link"]),
+            "min_gap": 0.12,      # 硬下界
+            "softness": 0.01,     # 0.1 m 以下就吃满惩罚
+        },
+    )
 @configclass
 class Z129DOFTerminationCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
@@ -409,7 +418,7 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     seed = 42
     device = "cuda:0"
     num_steps_per_env = 24
-    max_iterations = 50000
+    max_iterations = 22000
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
         class_name="ActorCritic",
@@ -468,7 +477,7 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                             # 后退
                             "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_back_segment_0351-0743.txt",
 
-                            # 横移
+                            # # 横移
                             "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_side_left_segment_2475-2747.txt",
                             "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_side_right_segment_1727-1999.txt",
 

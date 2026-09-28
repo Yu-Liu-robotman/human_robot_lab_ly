@@ -475,3 +475,48 @@ def knee_extend_on_contact_penalty(
             & (torch.abs(command[:, 2]) <= command_threshold)
         ).float()
     return cost * gate
+
+def feet_min_gap_penalty(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg,
+    min_gap: float = 0.10,
+    softness: float = 0.03,
+    power: float = 2.0,
+) -> torch.Tensor:
+    """两脚(ankle_roll)机身侧向间距不得小于 min_gap：低于则按归一化平方墙重罚，取值 0~1"""
+    asset: Articulation = env.scene[asset_cfg.name]
+    assert len(asset_cfg.body_ids) == 2
+    rel_w = asset.data.body_pos_w[:, asset_cfg.body_ids, :] - asset.data.root_pos_w.unsqueeze(1)
+    lat_axis = math_utils.matrix_from_quat(asset.data.root_quat_w)[:, :, 1]
+    y_b = torch.sum(rel_w * lat_axis.unsqueeze(1), dim=-1)
+    gap = torch.abs(y_b[:, 0] - y_b[:, 1])
+    over = torch.relu(min_gap - gap) / max(softness, 1e-6)
+    return torch.clamp(over, 0.0, 1.0) ** power
+
+
+def swing_air_time_overrun_penalty(
+    env: BaseEnv,
+    sensor_cfg: SceneEntityCfg,
+    max_air_time: float = 0.30,
+    overrun_ref: float = 0.12,
+    command_threshold: float = 0.1,
+    include_turning: bool = True,
+) -> torch.Tensor:
+    """摆动腿滞空超时惩罚：air_time 超过 max_air_time 后按归一化平方增长，每脚取值 0~1。
+
+    存在的意义：feet_air_time 是「奖励滞空」，swing_foot_clearance 只在 air<maximum_air_time
+    的窗口内生效，两者都不会惩罚「荡太久」。这里专门给摆动相时间加硬上界。
+    """
+    sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    air_time = sensor.data.current_air_time[:, sensor_cfg.body_ids]
+    over = torch.relu(air_time - max_air_time) / max(overrun_ref, 1e-6)
+    cost = torch.sum(torch.clamp(over, 0.0, 1.0) ** 2, dim=1)
+
+    command = env.command_generator.command
+    gate = (torch.linalg.vector_norm(command[:, :3], dim=1) > command_threshold).float()
+    if not include_turning:
+        turning = (torch.abs(command[:, 2]) > command_threshold) & (
+            torch.linalg.vector_norm(command[:, :2], dim=1) <= command_threshold
+        )
+        gate = gate * (~turning).float()
+    return cost * gate

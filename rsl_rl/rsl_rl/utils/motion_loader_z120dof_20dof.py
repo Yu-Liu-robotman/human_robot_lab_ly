@@ -50,7 +50,23 @@ class AMPLoader:
     S_JOINT_VEL_END_IDX = S_JOINT_VEL_START_IDX + S_JOINT_VEL_SIZE
     S_END_POS_START_IDX = S_JOINT_VEL_END_IDX
     S_END_POS_END_IDX = S_END_POS_START_IDX + S_END_EFFECTOR_POS_SIZE
-    
+
+    # 数据集（由 20dof 机器人导出的 txt，BODY_SIZE=23）body 顺序，
+    DATASET_BODY_NAMES = [
+        "base_link",
+        "arm_left_shoulder_pitch_link", "arm_right_shoulder_pitch_link",
+        "leg_left_hip_pitch_link", "leg_right_hip_pitch_link",
+        "arm_left_shoulder_roll_link", "arm_right_shoulder_roll_link",
+        "leg_left_hip_roll_link", "leg_right_hip_roll_link",
+        "arm_left_shoulder_yaw_link", "arm_right_shoulder_yaw_link",
+        "leg_left_hip_yaw_link", "leg_right_hip_yaw_link",
+        "arm_left_elbow_link", "arm_right_elbow_link",
+        "leg_left_knee_link", "leg_right_knee_link",
+        "arm_left_hand_link", "arm_right_hand_link",
+        "leg_left_ankle_pitch_link", "leg_right_ankle_pitch_link",
+        "leg_left_ankle_roll_link", "leg_right_ankle_roll_link",
+    ]
+
     def __init__(
         self,
         device,
@@ -73,12 +89,16 @@ class AMPLoader:
         self.num_frames = int(num_frames)
         if self.num_frames < 2:
             raise ValueError(f"num_frames 至少为 2（当前 {self.num_frames}），否则无法构成时间窗口。")
-        all_names_list = list(all_body_names)
+        all_names_list = list(self.DATASET_BODY_NAMES)   # ← 用数据集自己的顺序，不用机器人 body_names
         self.body_select = [all_names_list.index(n) for n in body_names]
         print(self.body_select)
         self.anchor_idx = all_names_list.index(anchor_name)
+        print(
+            f"[AMPLoader] body_select={self.body_select}（数据集下标）, "
+            f"anchor_idx={self.anchor_idx}（{anchor_name}）"
+        )
 
-        self.BODY_SIZE = len(all_names_list)
+        self.BODY_SIZE = len(self.DATASET_BODY_NAMES) # 数据集txt对应的body数量
         self.BODY_POS_SIZE = self.BODY_SIZE * 3
         self.BODY_QUAT_SIZE = self.BODY_SIZE * 4
         self.BODY_LIN_VEL_SIZE = self.BODY_SIZE * 3
