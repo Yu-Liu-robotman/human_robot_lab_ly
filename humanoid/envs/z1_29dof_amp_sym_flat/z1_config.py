@@ -123,47 +123,15 @@ class Z129DOFRewardCfg(RewardCfg):
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
             "contact_height": 0.037,
-            "target_clearance": 0.067,
+            "target_clearance": 0.072,
             "minimum_air_time": 0.13,
             "maximum_air_time": 0.35,
             "minimum_support_time": 0.04,
             "minimum_speed": COMMAND_THRESHOLD,
-            "maximum_forward_speed": 1.0,
+            "maximum_forward_speed": 0.4,
         },
     )
-    # # add* 脚掌偏航对齐 + 脚掌偏航枢轴速度约束 = 抑制扭脚行为
-    # feet_yaw_alignment = RewTerm(
-    #     func=z1_mdp.feet_yaw_alignment,
-    #     weight=-1.0,
-    #     params={
-    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
-    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
-    #         "lin_vel_y_eps": 0.05,
-    #         "ang_vel_z_eps": 0.05,
-    #         "contact_force_threshold": 5.0,
-    #     },
-    # )
-    # feet_yaw_pivot = RewTerm(
-    #     func=z1_mdp.feet_yaw_vel_in_contact,
-    #     weight=-0.15,
-    #     params={
-    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
-    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
-    #         "contact_force_threshold": 5.0,
-    #         "lin_vel_y_eps": 0.05,
-    #         "ang_vel_z_eps": 0.05,
-    #     },
-    # )  
-    # # add* 9月22号15:16 -> 参 考加入离散二阶差分逐强时间课程 -> 惩罚加速度突变抖动和顿挫
-    # action_smoothness = RewTerm(
-    #     func=z1_mdp.action_smoothness_with_curriculum,
-    #     weight=-0.0001,
-    #     params={
-    #         "start_scale": 0.1,
-    #         "power": 0.8,
-    #         "interval_epochs": 200 * 24,
-    #     },
-    # )  
+  
     # add* 原地踏步优化
     double_support_penalize = RewTerm(
         func=mdp.zero_double_support_penalize,
@@ -183,20 +151,29 @@ class Z129DOFRewardCfg(RewardCfg):
             "contact_force_threshold": 5.0,
         },
     )
-    # add* 行走步态优化
-    feet_lateral_placement = RewTerm(
-        func=z1_mdp.feet_lateral_placement_penalty,
-        weight=-2.0,                     
+    # add* 站立姿态优化 X
+    stand_still_joint_deviation_l1 = RewTerm(
+        func=mdp.leglab_stand_still_joint_deviation_l1,
+        weight=-1.0,
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
-            "target_gap": 0.20,          
-            "gap_tolerance": 0.010,
-            "midline_tolerance": 0.02,
             "command_threshold": COMMAND_THRESHOLD,
-            "max_gap": 0.3,
-            "include_turning": True,
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
+            "stand_cmd": True,
         },
     )
+
+    feet_force = RewTerm(
+        func=mdp.mjlab_soft_landing,
+        weight=-5e-3,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+            "threshold": 500,
+            "max_reward": 400,
+            "command_threshold": COMMAND_THRESHOLD,
+            "stand_cmd": True,
+        },
+    )
+    # add* 行走步态优化
     feet_flat_landing = RewTerm(
         func=z1_mdp.feet_flat_landing_penalty,
         weight=-1.0,
@@ -209,78 +186,26 @@ class Z129DOFRewardCfg(RewardCfg):
             "tolerance_sin2": 0.03,          # ≈ 8°
         },
     )
-    # add* 站立姿态优化 X
-    stand_still_joint_deviation_l1 = RewTerm(
-        func=mdp.leglab_stand_still_joint_deviation_l1,
+    # add* 两脚最小间距（防撞）：低于 0.10 m 重罚，站立/行走/转弯全程生效
+    feet_min_gap = RewTerm(
+        func=z1_mdp.feet_min_gap_penalty,
         weight=-1.0,
         params={
-            "command_threshold": COMMAND_THRESHOLD,
-            "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
-            "stand_cmd": True,
+            "asset_cfg": SceneEntityCfg("robot", body_names=[".*_ankle_roll_link"]),
+            "min_gap": 0.11,      # 硬下界
+            "softness": 0.01,     # 0.1 m 以下就吃满惩罚
         },
     )
-    # # add* 脚掌下落速度惩罚
-    # feet_impact_vel = RewTerm(
-    #     func=z1_mdp.feet_impact_vel_soft,
-    #     weight=-0.5,
-    #     params={
-    #         "asset_cfg": SceneEntityCfg(
-    #             "robot",
-    #             body_names=["leg_left_ankle_roll_link", "leg_right_ankle_roll_link"],
-    #             preserve_order=True,
-    #         ),
-    #         "height_scale": 0.02,
-    #         "free_descend_vel": 0.15,     # 新增
-    #         "command_threshold": COMMAND_THRESHOLD,
-    #         "include_turning": False,
-    #     },
-    # )
-    # 
-    feet_force = RewTerm(
-        func=mdp.mjlab_soft_landing,
-        weight=-5e-3,
+    # add* 治内外八（支撑相脚-躯干偏航角偏离，就是外八角本身）
+    feet_yaw_alignment = RewTerm(
+        func=z1_mdp.feet_yaw_alignment,
+        weight=-1.0,
         params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-            "threshold": 500,
-            "max_reward": 400,
-            "command_threshold": COMMAND_THRESHOLD,
-            "stand_cmd": True,
-        },
-    )
-    knee_heading_alignment = RewTerm(
-        func=z1_mdp.knee_heading_alignment_penalty,
-        weight=-0.6,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", body_names=[".*_knee_link", ".*_ankle_roll_link"]
-            ),
-            "tolerance": 0.05,
-            "swing_only": True,
-            "swing_height_eps": 0.01,
-            "command_threshold": COMMAND_THRESHOLD,
-            "include_turning": False,
-        },
-    )
-
-    # add* 落地后膝盖尽量打直
-    knee_extend_on_contact = RewTerm(
-        func=z1_mdp.knee_extend_on_contact_penalty,
-        weight=-0.5,
-        params={
-            "sensor_cfg": SceneEntityCfg(
-                "contact_sensor",
-                body_names=["leg_left_ankle_roll_link", "leg_right_ankle_roll_link"],
-                preserve_order=True,
-            ),
-            "asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=["leg_left_knee_joint", "leg_right_knee_joint"],
-                preserve_order=True,
-            ),
-            "knee_slack": 0.05,
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
             "contact_force_threshold": 5.0,
-            "command_threshold": COMMAND_THRESHOLD,
-            "include_turning": False,
+            "lin_vel_y_eps": 0.05,   # 门控：只罚近似直行
+            "ang_vel_z_eps": 0.05,   # 门控：转/横移时不罚
         },
     )
 
@@ -306,7 +231,7 @@ class Z129DOFTerminationCfg:
 @configclass
 class UpperBodyMotionCfg:
     """手臂（策略不控制的 14 个关节）随机大幅运动配置"""
-    enable: bool = False         # 是否启用上半身随机运动
+    enable: bool = True         # 是否启用上半身随机运动
     scale: float = 1.0          # 全局幅值系数
     theta: float = 1.5          # OU 回归强度：越小越慢、越飘
     start_scale: float = 0.15   # 幅度课程起点（仅 warmup_steps > 0 时生效）
@@ -315,13 +240,13 @@ class UpperBodyMotionCfg:
     default_amplitude: float = 0.0
     # 关节名关键字 → 幅值(rad)
     amplitudes: dict = {
-        "shoulder_pitch": 1.00,   # 抬臂方向，幅值最大
-        "shoulder_roll": 0.45,
-        "shoulder_yaw": 0.35,
-        "elbow": 0.70,
-        "wrist_roll": 0.30,
-        "wrist_pitch": 0.30,
-        "wrist_yaw": 0.30,
+        "shoulder_pitch": 0.40,   # 抬臂方向，幅值最大
+        "shoulder_roll": 0.25,
+        "shoulder_yaw": 0.25,
+        "elbow": 0.20,
+        "wrist_roll": 0.20,
+        "wrist_pitch": 0.20,
+        "wrist_yaw": 0.20,
     }
 
 
@@ -367,34 +292,34 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         self.domain_rand.events.push_robot.interval_range_s = (4.0, 10.0)
         self.domain_rand.events.push_robot.params["velocity_range"] = {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}
         self.scene.max_episode_length_s = 10
-        # # add* 手臂质量扰动：14 根手臂连杆每根加一点质量（一次采样，全程固定）
-        # self.domain_rand.events.upper_body_payload = EventTerm(
-        #     func=mdp.randomize_rigid_body_mass,
-        #     mode="startup",
-        #     params={
-        #         "asset_cfg": SceneEntityCfg(
-        #             "robot", body_names=UPPER_BODY_BODY_NAMES, preserve_order=True
-        #         ),
-        #         "mass_distribution_params": (0.5, 1.5),   # kg/body → 14 根合计 1.4~7.0 kg
-        #         "operation": "add",
-        #     },
-        # )
-        # # add* 手臂负载等效力（世界系：重力 + 横向摆动 + 随机推力，自动均摊到 14 根手臂连杆）
-        # self.domain_rand.events.upper_body_load = EventTerm(
-        #     func=z1_events.apply_payload_wrench,
-        #     mode="interval",
-        #     interval_range_s=(0.25, 0.6),      # 0.25~0.6s 换一次摆动方向
-        #     params={
-        #         "asset_cfg": SceneEntityCfg(
-        #             "robot", body_names=UPPER_BODY_BODY_NAMES, preserve_order=True
-        #         ),
-        #         "total_mass": (1.0, 6.0),      # 整条手臂链的总负载(kg)，自动均摊
-        #         "lateral_gain": 0.25,          # 横向摆动 ≈ 25% 重力
-        #         "tilt_gain": 0.05,
-        #         "push_range": (-2.0, 2.0),     # 每连杆每轴 ±2N 随机推力（世界系 xy）
-        #         "push_z_range": (-1.0, 1.0),   # z 单独给，避免过大向上力
-        #     },
-        # )
+        # add* 手臂质量扰动：14 根手臂连杆每根加一点质量（一次采样，全程固定）
+        self.domain_rand.events.upper_body_payload = EventTerm(
+            func=mdp.randomize_rigid_body_mass,
+            mode="startup",
+            params={
+                "asset_cfg": SceneEntityCfg(
+                    "robot", body_names=UPPER_BODY_BODY_NAMES, preserve_order=True
+                ),
+                "mass_distribution_params": (0.2, 0.8),   # kg/body → 14 根合计 1.4~7.0 kg
+                "operation": "add",
+            },
+        )
+        # add* 手臂负载等效力（世界系：重力 + 横向摆动 + 随机推力，自动均摊到 14 根手臂连杆）
+        self.domain_rand.events.upper_body_load = EventTerm(
+            func=z1_events.apply_payload_wrench,
+            mode="interval",
+            interval_range_s=(0.25, 0.6),      # 0.25~0.6s 换一次摆动方向
+            params={
+                "asset_cfg": SceneEntityCfg(
+                    "robot", body_names=UPPER_BODY_BODY_NAMES, preserve_order=True
+                ),
+                "total_mass": (1.0, 6.0),      # 整条手臂链的总负载(kg)，自动均摊
+                "lateral_gain": 0.25,          # 横向摆动 ≈ 25% 重力
+                "tilt_gain": 0.05,
+                "push_range": (-2.0, 2.0),     # 每连杆每轴 ±2N 随机推力（世界系 xy）
+                "push_z_range": (-1.0, 1.0),   # z 单独给，避免过大向上力
+            },
+        )
 
 @configclass
 class Z129DOFFlatAgentCfg(BaseAgentCfg):
@@ -466,11 +391,11 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     amp_motion_files = [
                             # 前进
                             "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_segment_0000-0343.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_Gen2_forward.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_slow_1_20dof.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/KIT_walk_walking_slow01_poses_20dof.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_medium_1_20dof.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_medium_2_20dof.txt",
+                            # "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_Gen2_forward.txt",
+                            # "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_slow_1_20dof.txt",
+                            # "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/KIT_walk_walking_slow01_poses_20dof.txt",
+                            # "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_medium_1_20dof.txt",
+                            # "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_medium_2_20dof.txt",
                             # 走转
                             "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_left_segment_4707-4929.txt",
                             "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_right_segment_4474-4696.txt",
