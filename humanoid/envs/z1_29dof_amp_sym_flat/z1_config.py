@@ -188,7 +188,7 @@ class Z129DOFRewardCfg(RewardCfg):
     )
     feet_yaw_pivot = RewTerm(
         func=z1_mdp.feet_yaw_vel_in_contact,
-        weight=-0.15,
+        weight=-0.151,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
