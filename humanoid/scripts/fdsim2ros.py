@@ -357,8 +357,8 @@ class HumaRobotSimRos(Node):
         LEG_TAU = {"hip_pitch": 100.0, "knee": 100.0, "hip_roll": 75.0,
                    "hip_yaw": 75.0, "ankle_pitch": 50.0, "ankle_roll": 25.0}
         _nf, _r = 2.0 * np.pi * 10.0, 2.0
-        LOCK = {"torso_yaw_joint": (100.0, 13.0, 75.0),
-                "torso_pitch_joint": (100.0, 13.0, 50.0),
+        LOCK = {"torso_yaw_joint": (500.0, 13.0, 75.0),
+                "torso_pitch_joint": (500.0, 13.0, 50.0),
                 "torso_roll_joint": (1160.0, 75.0, 50.0),
                 "wrist": (30.0, 2.0, 30.0),
                 "shoulder_pitch": (0.008 * _nf ** 2, 2 * _r * 0.008 * _nf, 50.0),
