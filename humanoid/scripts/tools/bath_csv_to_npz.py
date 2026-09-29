@@ -13,11 +13,11 @@ from isaaclab.app import AppLauncher
 
 """
 python3 humanoid/scripts/tools/bath_csv_to_npz.py \
-    --input_dir /home/user/LY/human_z1_lab/huma_robot_lab/humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof/gmr/csv2 \
-    --output_dir /home/user/LY/human_z1_lab/huma_robot_lab/humanoid/envs/z1_20dof_amp_sym_flat/datasets/20dof \
+    --input_dir /home/ubuntu/LY/9_28_1407_human_lab/huma_robot_lab/humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/gmr/csv \
+    --output_dir /home/ubuntu/LY/9_28_1407_human_lab/huma_robot_lab/humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/ \
     --input_fps 30 \
     --output_fps 50 \
-    --robot z120dof
+    --robot z123dof
 """
 
 parser = argparse.ArgumentParser(description="Batch replay motion csv files.")
@@ -48,7 +48,10 @@ if args_cli.robot == "z1":
     from humanoid.assets.z1.z1 import T2PRO as ROBOT_CFG
 elif args_cli.robot == "z120dof":
     from humanoid.assets.z1.z1_20dof import Z120DOF as ROBOT_CFG
-
+elif args_cli.robot == "z129dof":
+    from humanoid.assets.z1.z1_29dof import Z129DOF as ROBOT_CFG
+elif args_cli.robot == "z123dof":
+    from humanoid.assets.z1.z1 import T2PRO as ROBOT_CFG
 
 @configclass
 class ReplayMotionsSceneCfg(InteractiveSceneCfg):

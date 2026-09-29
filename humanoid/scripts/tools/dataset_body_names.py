@@ -6,7 +6,7 @@ python3 humanoid/scripts/tools/dataset_body_names.py \
     --usd humanoid/assets/z1/usd/20dof_nohand/z1_v1_20dof.usd
 
 python3 humanoid/scripts/tools/dataset_body_names.py \
-    'humanoid/envs/t2pro_23dof_amp/datasets/23dof/hugingface/hands/*.txt' \
+    'humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/*.txt' \
     --usd humanoid/assets/z1/usd/23dof/z1_v1_23dof.usd
 
 python3 humanoid/scripts/tools/dataset_body_names.py \

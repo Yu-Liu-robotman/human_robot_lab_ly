@@ -294,10 +294,10 @@ class Z129DOFTerminationCfg:
 class UpperBodyMotionCfg:
     """手臂（策略不控制的 14 个关节）随机大幅运动配置"""
     enable: bool = True         # 是否启用上半身随机运动
-    scale: float = 1.0          # 全局幅值系数
+    scale: float = 0.2          # 全局幅值系数
     theta: float = 1.5          # OU 回归强度：越小越慢、越飘
     start_scale: float = 0.15   # 幅度课程起点（仅 warmup_steps > 0 时生效）
-    warmup_steps: int = 2000 * 24  # 控制步数；0 = 不热身，直接满幅
+    warmup_steps: int = 10000 * 24  # 控制步数；0 = 不热身，直接满幅
     # 只有匹配 amplitudes 的关节会动；未匹配到的用这个值 → 0 = 保持 default 锁死（躯干）
     default_amplitude: float = 0.0
     # 关节名关键字 → 幅值(rad)
@@ -339,7 +339,7 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         self.experiment_name = "z1_29dof_flat"
         self.rl_version = 2.1
         # 策略只控 12 个腿关节，其余关节由 default + 扰动驱动。
-        self.rand_dof_nums = 17
+        self.rand_dof_nums = 14
         self.robot.action_scale = Z129DOF_ACTION_SCALE
         # 上半身随机大幅运动；
         self.upper_body_motion = UpperBodyMotionCfg()
@@ -354,18 +354,6 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         self.domain_rand.events.push_robot.interval_range_s = (4.0, 10.0)
         self.domain_rand.events.push_robot.params["velocity_range"] = {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}
         self.scene.max_episode_length_s = 10
-        # add* 手臂质量扰动：14 根手臂连杆每根加一点质量（一次采样，全程固定）
-        self.domain_rand.events.upper_body_payload = EventTerm(
-            func=mdp.randomize_rigid_body_mass,
-            mode="startup",
-            params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot", body_names=UPPER_BODY_BODY_NAMES, preserve_order=True
-                ),
-                "mass_distribution_params": (0.2, 0.8),   # kg/body → 14 根合计 1.4~7.0 kg
-                "operation": "add",
-            },
-        )
         # add* 手臂负载等效力（世界系：重力 + 横向摆动 + 随机推力，自动均摊到 14 根手臂连杆）
         self.domain_rand.events.upper_body_load = EventTerm(
             func=z1_events.apply_payload_wrench,
@@ -375,7 +363,7 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
                 "asset_cfg": SceneEntityCfg(
                     "robot", body_names=UPPER_BODY_BODY_NAMES, preserve_order=True
                 ),
-                "total_mass": (1.0, 6.0),      # 整条手臂链的总负载(kg)，自动均摊
+                "total_mass": (0.0, 2.5),      # 整条手臂链的总负载(kg)，自动均摊
                 "lateral_gain": 0.25,          # 横向摆动 ≈ 25% 重力
                 "tilt_gain": 0.05,
                 "push_range": (-2.0, 2.0),     # 每连杆每轴 ±2N 随机推力（世界系 xy）
@@ -437,11 +425,11 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     clip_actions = None
     save_interval = 100
     runner_class_name = "AmpOnPolicyRunner"
-    experiment_name = "z1_29dof_amp_flat"
+    experiment_name = "z1_29dof_15amp_flat"
     run_name = ""
     logger = "tensorboard"
-    neptune_project = "z1_29dof_amp_flat"
-    wandb_project = "z1_29dof_amp_flat"
+    neptune_project = "z1_29dof_15amp_flat"
+    wandb_project = "z1_29dof_15amp_flat"
     resume = False
     load_run = ".*"
     load_checkpoint = "model_.*.pt"
@@ -452,40 +440,37 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
 
     amp_motion_files = [
                             # 前进
-                            # "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_segment_0000-0343.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_Gen2_forward.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_slow_1_20dof.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/KIT_walk_walking_slow01_poses_20dof.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_medium_1_20dof.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/nokov_walk_forward_medium_2_20dof.txt",
+                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/t2pro_walk_0601_new.txt",
+
                             # 走转
                             # "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_left_segment_4707-4929.txt",
                             # "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_right_segment_4474-4696.txt",
 
                             # 后退
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_back_segment_0351-0743.txt",
+                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/t2pro_walk_0601_new_backward.txt",
 
                             # # 横移
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_side_left_segment_2475-2747.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_side_right_segment_1727-1999.txt",
+                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_side_left_segment_2475-2747.txt",
+                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_side_right_segment_1727-1999.txt",
 
                             # 原地转向
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_turn_left_segment_3649-3922.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_turn_right_segment_3176-3449.txt",
+                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_turn_left_segment_3649-3922.txt",
+                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_turn_right_segment_3176-3449.txt",
 
                             # 站立
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_stand_segment_5589-5748.txt",
+                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_stand_segment_5589-5748.txt",
 
                             ]
     amp_num_preload_transitions = 200000
     amp_num_frames = 4
     # amp_discr_hidden_dims = [1024, 512, 256]
     amp_discr_hidden_dims = [1024, 512]
-    min_normalized_std = [0.05] * 12
+    min_normalized_std = [0.05] * 15
     amp_body_names=KEY_POS_LIST
     amp_anchor_name=ANCHOR_NAME
     # add* 12dof amp 
-    amp_use_leg12dof = True
+    # amp_use_leg12dof = True
+    amp_loader = "z129dof_15dof"
 
 class Z129DOFAmpFlatSymEnvCfg(Z129DOFFlatEnvCfg):
     def __post_init__(self):
@@ -497,8 +482,8 @@ class Z129DOFAmpFlatSymEnvCfg(Z129DOFFlatEnvCfg):
 class Z129DOFAmpFlatSymAgentCfg(Z129DOFAmpFlatAgentCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.experiment_name = "z1_29dof_amp_sym_flat"
-        self.wandb_project = "z1_29dof_amp_sym_flat"
+        self.experiment_name = "z1_29dof_15amp_sym_flat"
+        self.wandb_project = "z1_29dof_15amp_sym_flat"
         self.algorithm.symmetry_cfg = RslRlSymmetryCfg(
             use_data_augmentation=True,
             use_mirror_loss=True,

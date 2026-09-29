@@ -36,11 +36,12 @@ from rsl_rl.modules import (
     StudentTeacher,
     StudentTeacherRecurrent,
 )
-from rsl_rl.utils import AMPLoader, AMPLoaderZ120dof12dof, AMPLoaderZ129dof12dof, Normalizer, store_code_state
+from rsl_rl.utils import AMPLoader, AMPLoaderZ120dof12dof, AMPLoaderZ129dof12dof,AMPLoaderZ129dof15dof, Normalizer, store_code_state
 _LOADER_MAP = {
     "z120dof": AMPLoader,
     "z120dof_12dof": AMPLoaderZ120dof12dof,
     "z129dof_12dof": AMPLoaderZ129dof12dof,
+    "z129dof_15dof":AMPLoaderZ129dof15dof
 }
 
 class AmpOnPolicyRunner:
