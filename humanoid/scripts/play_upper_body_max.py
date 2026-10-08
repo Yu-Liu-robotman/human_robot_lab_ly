@@ -43,6 +43,7 @@ from rsl_rl.runners import AmpOnPolicyRunner, DreamWaQAmpOnPolicyRunner, OnPolic
 
 from humanoid.envs import *  # noqa: E402,F401,F403
 from humanoid.utils import task_registry  # noqa: E402
+from humanoid.envs.base.base_config import CommandModeCfg  # noqa: E402
 from humanoid.utils.cli_args import update_rsl_rl_cfg  # noqa: E402
 
 
@@ -85,10 +86,22 @@ class UpperBodyMaxPlay:
             cfg.scene.terrain_generator = None
         if not self.a.base_push and getattr(cfg.domain_rand.events, "push_robot", None) is not None:
             cfg.domain_rand.events.push_robot = None
-        cfg.commands.ranges.lin_vel_x = (self.a.vx, self.a.vx)
-        cfg.commands.ranges.lin_vel_y = (self.a.vy, self.a.vy)
-        cfg.commands.ranges.ang_vel_z = (self.a.wz, self.a.wz)
-        cfg.commands.ranges.resampling_time_range = (1e6, 1e6)
+        # 固定指令：有 commands.modes 的任务用单模式锁定，否则写老的 ranges
+        if getattr(cfg.commands, "modes", None):
+            cfg.commands.modes = [
+                CommandModeCfg(
+                    name="play",
+                    weight=1.0,
+                    lin_vel_x=(self.a.vx, self.a.vx),
+                    lin_vel_y=(self.a.vy, self.a.vy),
+                    ang_vel_z=(self.a.wz, self.a.wz),
+                )
+            ]
+        else:
+            cfg.commands.ranges.lin_vel_x = (self.a.vx, self.a.vx)
+            cfg.commands.ranges.lin_vel_y = (self.a.vy, self.a.vy)
+            cfg.commands.ranges.ang_vel_z = (self.a.wz, self.a.wz)
+        cfg.commands.resampling_time_range = (1e6, 1e6)
         cfg.commands.rel_standing_envs = 0.0
         cfg.commands.heading_command = False
 

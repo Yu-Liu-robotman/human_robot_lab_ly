@@ -7,8 +7,41 @@ from rsl_rl.env import VecEnv
 class TlibotUniformVelocityCommand(UniformVelocityCommand):
     def __init__(self, cfg: UniformVelocityCommandCfg, env: VecEnv):
         super().__init__(cfg, env)
+        _cmds = getattr(getattr(env, "cfg", None), "commands", None)
+        self.modes = getattr(_cmds, "modes", None) or []
 
     def _resample_command(self, env_ids: Sequence[int]):
+        if not self.modes:
+            return self._resample_command_legacy(env_ids)
+
+        n = len(env_ids)
+        weights = torch.tensor([float(m.weight) for m in self.modes], device=self.device, dtype=torch.float)
+        weights = weights / weights.sum()
+        mode_idx = torch.multinomial(weights, n, replacement=True)
+
+        vx = torch.zeros(n, device=self.device)
+        vy = torch.zeros(n, device=self.device)
+        wz = torch.zeros(n, device=self.device)
+        for i, m in enumerate(self.modes):
+            mask = mode_idx == i
+            k = int(mask.sum().item())
+            if k == 0:
+                continue
+            vx[mask] = self._rand_uniform(m.lin_vel_x[0], m.lin_vel_x[1], k)
+            vy[mask] = self._rand_uniform(m.lin_vel_y[0], m.lin_vel_y[1], k)
+            wz[mask] = self._rand_uniform(m.ang_vel_z[0], m.ang_vel_z[1], k)
+
+        self.vel_command_b[env_ids, 0] = vx
+        self.vel_command_b[env_ids, 1] = vy
+        self.vel_command_b[env_ids, 2] = wz
+        self.is_standing_env[env_ids] = (vx.abs() < 1e-6) & (vy.abs() < 1e-6) & (wz.abs() < 1e-6)
+
+        if self.cfg.heading_command:
+            r = torch.empty(n, device=self.device)
+            self.heading_target[env_ids] = r.uniform_(*self.cfg.ranges.heading)
+            self.is_heading_env[env_ids] = r.uniform_(0.0, 1.0) <= self.cfg.rel_heading_envs
+
+    def _resample_command_legacy(self, env_ids: Sequence[int]):
         # sample velocity commands
         r = torch.empty(len(env_ids), device=self.device)
         # -- linear velocity - x direction

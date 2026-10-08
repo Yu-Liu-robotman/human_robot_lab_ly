@@ -12,6 +12,20 @@ from tqdm import tqdm
 # local imports
 import humanoid.utils.cli_args as cli_args  # isort: skip
 from humanoid.scripts.export_dwaq_policy import export_dwaq_policy
+
+
+def set_play_command(cmd_cfg, name, lin_vel_x, lin_vel_y, ang_vel_z):
+    """收窄/锁定指令：任务用 commands.modes 时改 modes，否则写老的 ranges。"""
+    if getattr(cmd_cfg, "modes", None):
+        cmd_cfg.modes = [
+            CommandModeCfg(
+                name=name, weight=1.0, lin_vel_x=lin_vel_x, lin_vel_y=lin_vel_y, ang_vel_z=ang_vel_z
+            )
+        ]
+    else:
+        cmd_cfg.ranges.lin_vel_x = lin_vel_x
+        cmd_cfg.ranges.lin_vel_y = lin_vel_y
+        cmd_cfg.ranges.ang_vel_z = ang_vel_z
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
@@ -35,6 +49,7 @@ from humanoid.utils.cli_args import update_rsl_rl_cfg
 from humanoid.terrains import GRAVEL_TERRAINS_CFG, ROUGH_TERRAINS_CFG, DWAQ_TERRAINS_CFG, STAIRS_SLOPE_HARD_CFG
 # 导出逻辑统一收敛到 humanoid/utils/export_utils.py，训练/推理共用同一套
 from humanoid.utils.export_utils import export_all  # noqa: F401
+from humanoid.envs.base.base_config import CommandModeCfg
 
 def play():
     runner: OnPolicyRunner
@@ -48,11 +63,10 @@ def play():
     env_cfg.scene.max_episode_length_s = 40.0
     env_cfg.scene.num_envs = 50
     env_cfg.scene.env_spacing = 2.5
-    env_cfg.commands.ranges.lin_vel_x = (-0.6, 1.5)
-    env_cfg.commands.ranges.lin_vel_y = (-0.0, 0.0)
+    # 有 commands.modes 的任务走 modes（单模式收窄 vx），否则回退到老的 ranges
+    set_play_command(env_cfg.commands, "play", lin_vel_x=(-0.6, 1.5), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0))
     env_cfg.commands.ranges.heading = (-0.0, 0.0)
     env_cfg.scene.height_scanner.drift_range = (0.0, 0.0)
-
     # env_cfg.scene.terrain_generator = None
     # env_cfg.scene.terrain_type = "plane"
 

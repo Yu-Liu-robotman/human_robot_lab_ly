@@ -169,9 +169,16 @@ class AMPLoader:
         self._dof_pos_list = []
         self._dof_vel_list = []
         self._motions_mean_cmd = []
+        self.trajectory_labels = []
         for i, motion_file in enumerate(motion_files):
-            self.trajectory_names.append(motion_file.split(".")[0])
-            with open(motion_file) as f:
+            # support both (label, path) tuples and plain path strings
+            if isinstance(motion_file, (tuple, list)):
+                motion_label, motion_path = motion_file[0], motion_file[1]
+            else:
+                motion_label, motion_path = None, motion_file
+            self.trajectory_labels.append(motion_label)
+            self.trajectory_names.append(motion_path.split(".")[0])
+            with open(motion_path) as f:
                 motion_json = json.load(f)
                  # 腰部D32不动， 髋关节hip roll, ankle roll不动
                 # motion_data = np.array(motion_json["Frames"])
@@ -179,7 +186,7 @@ class AMPLoader:
                 expected_dim = self.JOINT_VEL_END_MUJOCO_IDX
                 if motion_data1.shape[1] != expected_dim:
                     raise ValueError(
-                        f"{motion_file} 的帧宽 {motion_data1.shape[1]} 与推导值 {expected_dim} 不符"
+                        f"{motion_path} 的帧宽 {motion_data1.shape[1]} 与推导值 {expected_dim} 不符"
                         f"（2*{self.JOINT_POS_SIZE} + 13*{self.BODY_SIZE} + 2*{self.JOINT_POS_MUJOCO_SIZE}）。"
                         "很可能是数据集与机器人 USD 不匹配，请用同一个 robot 重新导出 txt。"
                     )
@@ -316,7 +323,7 @@ class AMPLoader:
                 self.trajectory_lens.append(traj_len)
                 self.trajectory_num_frames.append(float(motion_data.shape[0]))
 
-            print(f"Loaded {traj_len}s. motion from {motion_file}.")
+            print(f"Loaded {traj_len}s. motion from {motion_path}.")
 
         # Trajectory weights are used to sample some trajectories more than others.
         self.trajectory_weights = np.array(self.trajectory_weights) / np.sum(self.trajectory_weights)
@@ -327,6 +334,8 @@ class AMPLoader:
             self._motions_mean_cmd,
             dim=0,
         )
+        # keep the data-derived per-trajectory mean cmd (the block below overrides _motions_mean_cmd)
+        self._data_mean_cmd = self._motions_mean_cmd.clone()
         torch.set_printoptions(precision=4, sci_mode=False)
         print(self._motions_mean_cmd)
         self._motions_mean_cmd = torch.tensor([
@@ -377,8 +386,24 @@ class AMPLoader:
             4,4,    # turn
             5,       # idle
         ])
-        self.motion_cmds_abs = self._motions_mean_cmd.abs().max(dim=0)[0]
-        self.motion_cmds_std = self._motions_mean_cmd.std(dim=0)
+        self.motion_cmds_abs = self._data_mean_cmd.abs().max(dim=0)[0]
+        self.motion_cmds_std = self._data_mean_cmd.std(dim=0)
+        # Group trajectory indices by label for command-conditioned expert sampling.
+        self.label_to_traj = {}
+        for idx, lab in enumerate(self.trajectory_labels):
+            self.label_to_traj.setdefault(lab, []).append(idx)
+        self.has_command_labels = any(lab is not None for lab in self.trajectory_labels)
+        self._label_names = list(self.label_to_traj.keys())
+        self._label_traj_list = [self.label_to_traj[lab] for lab in self._label_names]
+        _centroids = [
+            self._data_mean_cmd[torch.tensor(idxs, device=self._data_mean_cmd.device)].mean(dim=0)
+            for idxs in self._label_traj_list
+        ]
+        self.label_centroids = (
+            torch.stack(_centroids, dim=0) if _centroids else self._data_mean_cmd
+        ).to(self._data_mean_cmd.device)
+        print("[AMPLoader] command labels:", self._label_names)
+        print("[AMPLoader] label centroids:\n", self.label_centroids)
         # # Preload transitions.
         self.preload_transitions = preload_transitions
         if self.preload_transitions:
@@ -574,6 +599,29 @@ class AMPLoader:
                 window = self.get_frame_window_at_time_batch(traj_idxs, times + self.time_between_frames)
             yield window
 
+    def _classify_cmd(self, cmd):
+        """Map each (vx, vy, wz) command to the nearest command-label centroid."""
+        scale = self.motion_cmds_abs.to(cmd.device).clamp(min=1e-3)
+        centroids = self.label_centroids.to(cmd.device)
+        diff = (cmd[:, None, :] - centroids[None, :, :]) / scale[None, None, :]
+        return (diff ** 2).sum(dim=-1).argmin(dim=1)
+
+    def amp_expert_sample_by_cmd(self, cmd_batch):
+        """Return expert windows (B, num_frames * frame_dim) matched to the given commands.
+
+        Each command is classified to a label; the expert window is then drawn from a
+        trajectory carrying that label (randomly among them).
+        """
+        cmd = cmd_batch[:, :3].detach().float()
+        b = cmd.shape[0]
+        label_idx = self._classify_cmd(cmd).cpu().numpy()
+        traj_idxs = np.empty(b, dtype=np.int64)
+        for j in range(b):
+            cand = self._label_traj_list[int(label_idx[j])]
+            traj_idxs[j] = self.weighted_traj_idx_sample() if len(cand) == 0 else cand[np.random.randint(len(cand))]
+        times = self.traj_time_sample_batch(traj_idxs)
+        return self.get_frame_window_at_time_batch(traj_idxs, times + self.time_between_frames)
+
     @property
     def observation_dim(self):
         """Size of AMP observations."""
@@ -600,238 +648,3 @@ class AMPLoader:
 
     def get_end_pos_batch(poses):
         return poses[:, AMPLoader.END_POS_START_IDX : AMPLoader.S_END_POS_END_IDX]
-
-    def feed_forward_generator_gen2(self, num_mini_batch, mini_batch_size):
-        num_motions = len(self._body_pos_b_list)
-         
-        for batch_idx in range(num_mini_batch):
-            # 按顺序循环选择motion文件
-            motion_idx = batch_idx % num_motions
-            
-            # 获取当前motion数据
-            current_body_pos_b = self._body_pos_b_list[motion_idx]
-            current_body_ori_b = self._body_ori_b_list[motion_idx]
-            current_body_lin_vel_b = self._body_lin_vel_b_list[motion_idx]
-            current_body_ang_vel_b = self._body_ang_vel_b_list[motion_idx]
-            current_root_ori = self._root_ori_list[motion_idx]
-            current_root_lin_vel_b = self._root_lin_vel_b_list[motion_idx]
-            current_root_ang_vel_b = self._root_ang_vel_b_list[motion_idx]
-            current_dof_pos = self._dof_pos_list[motion_idx]
-            current_dof_vel = self._dof_vel_list[motion_idx]
-            current_time_step_total = current_body_pos_b.shape[0]
-            
-            # 从当前motion中随机采样
-            idxs = torch.randint(0, current_time_step_total, (mini_batch_size,), device=current_body_pos_b.device)
-            idxs = torch.clamp(idxs, max=current_time_step_total - 1)
-            
-            batch_body_pos_b = current_body_pos_b[idxs]  # (mini_batch_size, num_bodies, 3)
-            batch_body_ori_b = current_body_ori_b[idxs]  # (mini_batch_size, num_bodies, 6)
-            batch_body_lin_vel_b = current_body_lin_vel_b[idxs]  # (mini_batch_size, num_bodies, 3)
-            batch_body_ang_vel_b = current_body_ang_vel_b[idxs]  # (mini_batch_size, num_bodies, 3)
-            batch_root_ori = current_root_ori[idxs]
-            batch_root_lin_vel_b = current_root_lin_vel_b[idxs]
-            batch_root_ang_vel_b = current_root_ang_vel_b[idxs]
-            batch_dof_pos = current_dof_pos[idxs]
-            batch_dof_vel = current_dof_vel[idxs]
-
-
-            s = torch.cat(
-                [
-                    batch_dof_pos.reshape(mini_batch_size, -1),
-                    batch_dof_vel.reshape(mini_batch_size, -1),
-                    batch_root_ori.reshape(mini_batch_size, -1),
-                    batch_root_lin_vel_b.reshape(mini_batch_size, -1),
-                    batch_root_ang_vel_b.reshape(mini_batch_size, -1),
-                    batch_body_pos_b.reshape(mini_batch_size, -1),
-                    batch_body_ori_b.reshape(mini_batch_size, -1),
-                    batch_body_lin_vel_b.reshape(mini_batch_size, -1),
-                    batch_body_ang_vel_b.reshape(mini_batch_size, -1),
-                ],
-                dim=-1,
-            )  # (mini_batch_size, obs_dim)
-
-            next_idxs = (idxs + 1)
-            next_idxs = torch.clamp(next_idxs, max=current_time_step_total - 1)
-            batch_next_dof_pos = current_dof_pos[next_idxs]
-            batch_next_dof_vel = current_dof_vel[next_idxs]
-            batch_next_root_ori = current_root_ori[next_idxs]
-            batch_next_root_lin_vel_b = current_root_lin_vel_b[next_idxs]
-            batch_next_root_ang_vel_b = current_root_ang_vel_b[next_idxs]
-            batch_next_body_pos_b = current_body_pos_b[next_idxs]  # (mini_batch_size, num_bodies, 3)
-            batch_next_body_ori_b = current_body_ori_b[next_idxs]  # (mini_batch_size, num_bodies, 6)
-            batch_next_body_lin_vel_b = current_body_lin_vel_b[next_idxs]  # (mini_batch_size, num_bodies, 3)
-            batch_next_body_ang_vel_b = current_body_ang_vel_b[next_idxs]  # (mini_batch_size, num_bodies, 3)
-            s_next = torch.cat(
-                [
-                    batch_next_dof_pos.reshape(mini_batch_size, -1),
-                    batch_next_dof_vel.reshape(mini_batch_size, -1),
-                    batch_next_root_ori.reshape(mini_batch_size, -1),
-                    batch_next_root_lin_vel_b.reshape(mini_batch_size, -1),
-                    batch_next_root_ang_vel_b.reshape(mini_batch_size, -1),
-                    batch_next_body_pos_b.reshape(mini_batch_size, -1),
-                    batch_next_body_ori_b.reshape(mini_batch_size, -1),
-                    batch_next_body_lin_vel_b.reshape(mini_batch_size, -1),
-                    batch_next_body_ang_vel_b.reshape(mini_batch_size, -1),
-                ],
-                dim=-1,
-            )  # (mini_batch_size, obs_dim)
-            yield s, s_next
-
-    def amp_expert_sample_by_cmd(self, cmd_batch):
-        device = cmd_batch.device
-        B = cmd_batch.shape[0]
-        motion_cmds = self._motions_mean_cmd.to(device)
-        motion_skill = self.motion_skill.to(device)
-        num_motions = motion_cmds.shape[0]
-        obs_dim = AMPLoader.S_END_POS_END_IDX
-        s = torch.empty((B, obs_dim), device=device, dtype=self._dof_pos_list[0].dtype,)
-        s_next = torch.empty_like(s)
-        # --------------------------------------------------
-        # 1. skill routing
-        # --------------------------------------------------
-        skill = self.compute_skill(cmd_batch)      # (B,)
-        unknown_mask = (skill < 0)
-        total_unknown = torch.sum(unknown_mask)
-        # --------------------------------------------------
-        # 2. skill handle
-        # --------------------------------------------------
-        all_skills = torch.unique(skill)
-        for skill_id in all_skills:
-            mask = (skill == skill_id)
-            if not torch.any(mask):
-                continue
-            batch_ids = torch.where(mask)[0]
-            cmd_sub = cmd_batch[batch_ids][:,:3]
-            # --------------------------------------------------
-            # candidate motion pool
-            # --------------------------------------------------
-            if skill_id < 0:
-                # candidate_motion = torch.arange(num_motions-8, device=device,)
-                self.sc_motion_idx += 1
-                self.sc_motion_idx = self.sc_motion_idx % (num_motions-5)
-                selected_motion = torch.full(
-                    (len(batch_ids),),
-                    self.sc_motion_idx,
-                    device=device,
-                    dtype=torch.long,
-                )
-            else:
-                candidate_motion = torch.where(motion_skill == skill_id)[0]
-                if len(candidate_motion) == 0:
-                    candidate_motion = torch.arange(num_motions, device=device,)
-
-                candidate_cmd = motion_cmds[candidate_motion]
-                # --------------------------------------------------
-                # 3. cmd matching
-                # --------------------------------------------------
-                cmd_min = torch.tensor([-0.6, -0.6, -1.0], device=device,)
-                cmd_max = torch.tensor([3.0, 0.6, 1.0], device=device,)
-                cmd_norm = (cmd_sub - cmd_min) / (cmd_max - cmd_min)
-                motion_norm = (candidate_cmd - cmd_min) / (cmd_max - cmd_min)
-                dist = torch.cdist(cmd_norm, motion_norm,)
-                # --------------------------------------------------
-                # 4. top-k sampling
-                # --------------------------------------------------
-                topk = min(3, len(candidate_motion))
-                topk_dist, topk_idx = torch.topk(dist, k=topk, dim=1, largest=False,)
-                temperature = 0.2
-                topk_weight = torch.softmax(-topk_dist / temperature, dim=1,)
-                sampled_local = torch.multinomial(topk_weight, 1, ).squeeze(1)
-                selected_motion = candidate_motion[topk_idx[torch.arange(len(batch_ids), device=device), sampled_local,]]
-            # --------------------------------------------------
-            # 5. sample trajectory frame
-            # --------------------------------------------------
-            for motion_idx in torch.unique(selected_motion):
-                m_mask = (selected_motion == motion_idx)
-                if not torch.any(m_mask):
-                    continue
-                local_ids = torch.where(m_mask)[0]
-                global_ids = batch_ids[local_ids]
-                n = len(local_ids)
-                s_m, s_next_m = self._sample_motion(int(motion_idx.item()), n,)
-                s[global_ids] = s_m
-                s_next[global_ids] = s_next_m
-        if(self.batch_idx == 0):
-            total = 0
-
-            for skill_id in all_skills:
-
-                mask = (skill == skill_id)
-
-                n = mask.sum().item()
-
-                print(
-                    f"skill={skill_id}, count={n}"
-                )
-
-                total += n
-
-            print("total =", total)
-        self.batch_idx += 1
-        self.batch_idx = self.batch_idx % 20
-        return s, s_next
-    
-    def compute_skill(self, cmd):
-        vx = cmd[:, 0]
-        vy = cmd[:, 1]
-        wz = cmd[:, 2]
-        stand_flag = cmd[:, 3]
-        skill = torch.full((cmd.shape[0],), -1, device=cmd.device, dtype=torch.long,)
-        
-        skill[(vx <= 1.5) & (vx > 0) & (vy.abs() == 0) & (wz.abs() == 0)] = 0 # forward
-        skill[(vx <= 1.5) & (vx > 0) & (vy.abs() == 0) & (wz.abs() > 0)] = 1
-        skill[(vx < 0) & (vy.abs() == 0) & (wz.abs() == 0)] = 2
-        skill[(vx.abs() == 0) & (vy.abs() > 0) & (wz.abs() == 0) ] = 3
-        skill[(vx.abs() == 0) & (vy.abs() == 0) & (wz.abs() > 0)] = 4
-        skill[(vx.abs() == 0) & (vy.abs() == 0 ) & (wz.abs() == 0) & (stand_flag == 1.0)] = 5
-        # skill[(vx > 1.5) & (vy.abs() == 0 ) & (wz.abs() == 0)] = 6
-        # skill[(vx > 1.5)  & (vy.abs() == 0) & (wz.abs() > 0)] = 7
-        # skill[(vx.abs() == 0) & (vy.abs() == 0 ) & (wz.abs() == 0) & (stand_flag == -1.0)] = 8
-        # skill[(vx > 1.5) & (vy.abs() == 0 ) & (wz.abs() == 0)] = 6
-        # skill[(vx > 1.5)  & (vy.abs() == 0) & (wz.abs() > 0)] = 7
-        
-        # sample
-        return skill
-    def _sample_motion(self, motion_idx, n):
-        device = self._body_pos_b_list[motion_idx].device
-        body_pos = self._body_pos_b_list[motion_idx]
-        body_ori = self._body_ori_b_list[motion_idx]
-        body_lin = self._body_lin_vel_b_list[motion_idx]
-        body_ang = self._body_ang_vel_b_list[motion_idx]
-        root_ori = self._root_ori_list[motion_idx]
-        root_lin = self._root_lin_vel_b_list[motion_idx]
-        root_ang = self._root_ang_vel_b_list[motion_idx]
-        dof_pos = self._dof_pos_list[motion_idx]
-        dof_vel = self._dof_vel_list[motion_idx]
-        T = body_pos.shape[0]
-        idxs = torch.randint(0, T - 1, (n,), device=device,)
-        next_idxs = idxs + 1
-        s = torch.cat(
-            [
-                dof_pos[idxs].reshape(n, -1),
-                dof_vel[idxs].reshape(n, -1),
-                # root_ori[idxs].reshape(n, -1),
-                # root_lin[idxs].reshape(n, -1),
-                # root_ang[idxs].reshape(n, -1),
-                body_pos[idxs].reshape(n, -1),
-                # body_ori[idxs].reshape(n, -1),
-                # body_lin[idxs].reshape(n, -1),
-                # body_ang[idxs].reshape(n, -1),
-            ],
-            dim=-1,
-        )
-        s_next = torch.cat(
-            [
-                dof_pos[next_idxs].reshape(n, -1),
-                dof_vel[next_idxs].reshape(n, -1),
-                # root_ori[next_idxs].reshape(n, -1),
-                # root_lin[next_idxs].reshape(n, -1),
-                # root_ang[next_idxs].reshape(n, -1),
-                body_pos[next_idxs].reshape(n, -1),
-                # body_ori[next_idxs].reshape(n, -1),
-                # body_lin[next_idxs].reshape(n, -1),
-                # body_ang[next_idxs].reshape(n, -1),
-            ],
-            dim=-1,
-        )
-        return s, s_next

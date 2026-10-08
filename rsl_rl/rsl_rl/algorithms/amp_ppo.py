@@ -268,13 +268,23 @@ class AMPPPO:
             self.num_learning_epochs * self.num_mini_batches,
             self.storage.num_envs * self.storage.num_transitions_per_env // self.num_mini_batches,
         )
-        amp_expert_generator = self.amp_data.feed_forward_generator_window(
-            self.num_learning_epochs * self.num_mini_batches,
-            self.storage.num_envs * self.storage.num_transitions_per_env // self.num_mini_batches,
-        )  #放弃使用skill采样，恢复原本amp采样
+        # command-conditioned expert sampling when the loader carries command labels
+        self.use_cmd_expert = getattr(self.amp_data, "has_command_labels", False)
+        if self.use_cmd_expert:
+            amp_batches = zip(generator, amp_policy_generator)
+        else:
+            amp_expert_generator = self.amp_data.feed_forward_generator_window(
+                self.num_learning_epochs * self.num_mini_batches,
+                self.storage.num_envs * self.storage.num_transitions_per_env // self.num_mini_batches,
+            )
+            amp_batches = zip(generator, amp_policy_generator, amp_expert_generator)
 
         # iterate over batches
-        for sample, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):  #添加amp_expert_generator到amp初始采样中
+        for _amp_batch in amp_batches:
+            if self.use_cmd_expert:
+                sample, sample_amp_policy = _amp_batch
+            else:
+                sample, sample_amp_policy, sample_amp_expert = _amp_batch
             (
                 obs_batch,
                 critic_obs_batch,
@@ -295,7 +305,9 @@ class AMPPPO:
             num_aug = 1
             # original batch size
             original_batch_size = obs_batch.shape[0]
-            # sample_amp_expert = self.amp_data.amp_expert_sample_by_cmd(obs_batch[:,:4])   #注释skill的采样调用
+            if self.use_cmd_expert:
+                # match each expert window to the command of the corresponding policy obs
+                sample_amp_expert = self.amp_data.amp_expert_sample_by_cmd(obs_batch[:, :4])
             # check if we should normalize advantages per mini batch
             if self.normalize_advantage_per_mini_batch:
                 with torch.no_grad():

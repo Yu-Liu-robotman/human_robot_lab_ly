@@ -17,6 +17,7 @@ import humanoid.mdp as mdp
 from .base_config import (
     ActionDelayCfg,
     BaseSceneCfg,
+    CommandModeCfg,
     CommandRangesCfg,
     CommandsCfg,
     DomainRandCfg,

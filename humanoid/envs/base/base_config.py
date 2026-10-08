@@ -110,6 +110,20 @@ class CommandRangesCfg:
 
 
 @configclass
+class CommandModeCfg:
+    """A single velocity-command mode; each axis takes a (low, high) range.
+
+    Set an axis range to (0.0, 0.0) to keep it inactive (always 0), so mutually
+    exclusive rules such as "vx OR vy, never both" are expressed by separate modes.
+    """
+    name: str = "mode"
+    weight: float = 1.0
+    lin_vel_x: tuple = (0.0, 0.0)
+    lin_vel_y: tuple = (0.0, 0.0)
+    ang_vel_z: tuple = (0.0, 0.0)
+
+
+@configclass
 class CommandsCfg:
     resampling_time_range: tuple = (10.0, 10.0)
     rel_standing_envs: float = 0.2
@@ -118,6 +132,8 @@ class CommandsCfg:
     heading_control_stiffness: float = 0.5
     debug_vis: bool = True
     ranges: CommandRangesCfg = CommandRangesCfg()
+    # Custom command modes; when empty command.py falls back to the legacy hardcoded distribution.
+    modes: list = []
 
 
 @configclass
