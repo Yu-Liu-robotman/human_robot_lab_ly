@@ -39,7 +39,7 @@ class Discriminator(nn.Module):
         task_reward_lerp (float): Interpolation factor for combining rewards.
     """
 
-    def __init__(self, input_dim, amp_reward_coef, hidden_layer_sizes, device, task_reward_lerp=0.0, num_frames=2):
+    def __init__(self, input_dim, amp_reward_coef, hidden_layer_sizes, device, task_reward_lerp=0.0, num_frames=2, num_labels=0):
         super().__init__()
 
         self.device = device
@@ -49,10 +49,12 @@ class Discriminator(nn.Module):
         if self.input_dim % self.num_frames != 0:
             raise ValueError(f"input_dim={self.input_dim} 无法被 num_frames={self.num_frames} 整除。")
         self.obs_dim = self.input_dim // self.num_frames
+        # optional one-hot style label appended to the discriminator input
+        self.num_labels = int(num_labels)
 
         self.amp_reward_coef = amp_reward_coef
         amp_layers = []
-        curr_in_dim = input_dim
+        curr_in_dim = input_dim + self.num_labels
         for hidden_dim in hidden_layer_sizes:
             amp_layers.append(nn.Linear(curr_in_dim, hidden_dim))
             amp_layers.append(nn.ReLU())
@@ -65,7 +67,7 @@ class Discriminator(nn.Module):
 
         self.task_reward_lerp = task_reward_lerp
 
-    def forward(self, x):
+    def forward(self, x, label=None):
         """
         Forward pass through the discriminator network.
 
@@ -75,11 +77,17 @@ class Discriminator(nn.Module):
         Returns:
             torch.Tensor: Discriminator output logits with shape (batch_size, 1).
         """
-        h = self.trunk(x)
+        h = self.trunk(self._append_label(x, label))
         d = self.amp_linear(h)
         return d
 
-    def compute_grad_pen(self, expert_state, expert_next_state=None, lambda_=10):
+    def _append_label(self, x, label):
+        """Concat an optional one-hot style label to the flat window."""
+        if self.num_labels > 0 and label is not None:
+            return torch.cat([x, label], dim=-1)
+        return x
+
+    def compute_grad_pen(self, expert_state, expert_next_state=None, lambda_=10, label=None):
         """
         Compute gradient penalty for the expert data, used to regularize the discriminator.
 
@@ -103,6 +111,7 @@ class Discriminator(nn.Module):
         if expert_data.dim() == 3:
             expert_data = expert_data.reshape(expert_data.shape[0], -1)
         # detach().clone() 确保得到可写 requires_grad 的叶子张量（reshape 的结果是 view，不能直接改）
+        expert_data = self._append_label(expert_data, label)
         expert_data = expert_data.detach().clone().requires_grad_(True)
 
         disc = self.amp_linear(self.trunk(expert_data))
@@ -129,7 +138,7 @@ class Discriminator(nn.Module):
         out = normalizer.normalize_torch(disc_obs.reshape(b * n, d), self.device).reshape(b, n, d)
         return out.reshape(b, n * d) if is_flat else out
 
-    def predict_style_reward(self, disc_obs, task_reward=None, normalizer=None):
+    def predict_style_reward(self, disc_obs, task_reward=None, normalizer=None, label=None):
         """
         多帧窗口版本的 AMP 奖励预测（供 N 帧 AMP 使用）。
 
@@ -147,6 +156,7 @@ class Discriminator(nn.Module):
             disc_obs = self._normalize_window(disc_obs, normalizer)
             if disc_obs.dim() == 3:
                 disc_obs = disc_obs.reshape(disc_obs.shape[0], -1)
+            disc_obs = self._append_label(disc_obs, label)
 
             d = self.amp_linear(self.trunk(disc_obs))
             style_reward = self.amp_reward_coef * torch.clamp(1 - (1 / 4) * torch.square(d - 1), min=0)

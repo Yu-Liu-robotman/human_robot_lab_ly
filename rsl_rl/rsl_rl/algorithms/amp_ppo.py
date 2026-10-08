@@ -117,7 +117,13 @@ class AMPPPO:
         # 每条样本 = 一个 num_frames 帧的时间窗口（扁平的 num_frames * obs_dim）
         self.amp_num_frames = getattr(discriminator, "num_frames", 2)
         self.amp_obs_dim = getattr(discriminator, "obs_dim", discriminator.input_dim // max(self.amp_num_frames, 1))
-        self.amp_storage = ReplayBuffer(discriminator.input_dim, amp_replay_buffer_size, device, store_next=False)
+        self.amp_storage = ReplayBuffer(
+            discriminator.input_dim,
+            amp_replay_buffer_size,
+            device,
+            store_next=False,
+            label_dim=getattr(discriminator, "num_labels", 0),
+        )
         self.amp_data = amp_data
         self.amp_normalizer = amp_normalizer
 
@@ -185,7 +191,7 @@ class AMPPPO:
         self.amp_transition.observations = amp_obs
         return self.transition.actions
 
-    def process_env_step(self, rewards, dones, infos, amp_obs):
+    def process_env_step(self, rewards, dones, infos, amp_obs, amp_label=None):
         # Record the rewards and dones
         # Note: we clone here because later on we bootstrap the rewards based on timeouts
         self.transition.rewards = rewards.clone()
@@ -212,7 +218,7 @@ class AMPPPO:
         # record the transition
         if amp_obs.dim() == 3:
             amp_obs = amp_obs.reshape(amp_obs.shape[0], -1)
-        self.amp_storage.insert(amp_obs)
+        self.amp_storage.insert(amp_obs, labels=amp_label)
         self.storage.add_transitions(self.transition)
         self.transition.clear()
         self.amp_transition.clear()
@@ -282,9 +288,10 @@ class AMPPPO:
         # iterate over batches
         for _amp_batch in amp_batches:
             if self.use_cmd_expert:
-                sample, sample_amp_policy = _amp_batch
+                sample, (sample_amp_policy, policy_label) = _amp_batch
             else:
                 sample, sample_amp_policy, sample_amp_expert = _amp_batch
+                policy_label = None
             (
                 obs_batch,
                 critic_obs_batch,
@@ -307,7 +314,11 @@ class AMPPPO:
             original_batch_size = obs_batch.shape[0]
             if self.use_cmd_expert:
                 # match each expert window to the command of the corresponding policy obs
-                sample_amp_expert = self.amp_data.amp_expert_sample_by_cmd(obs_batch[:, :4])
+                sample_amp_expert, expert_label = self.amp_data.amp_expert_sample_by_cmd(obs_batch[:, :4])
+                has_expert = sample_amp_expert is not None
+            else:
+                has_expert = True
+                expert_label = None
             # check if we should normalize advantages per mini batch
             if self.normalize_advantage_per_mini_batch:
                 with torch.no_grad():
@@ -450,19 +461,20 @@ class AMPPPO:
                 rnd_loss = mseloss(predicted_embedding, target_embedding)
 
             # Discriminator loss. 单条样本 = 一个 num_frames 帧的窗口
-            policy_window = self._split_amp_window(sample_amp_policy)
-            expert_window = self._split_amp_window(sample_amp_expert)
-            with torch.no_grad():
-                policy_window = self._normalize_amp_window(policy_window)
-                expert_window = self._normalize_amp_window(expert_window)
-            policy_d = self.discriminator(policy_window.reshape(policy_window.shape[0], -1))
-            expert_d = self.discriminator(expert_window.reshape(expert_window.shape[0], -1))
-            expert_loss = torch.nn.MSELoss()(expert_d, torch.ones(expert_d.size(), device=self.device))
-            policy_loss = torch.nn.MSELoss()(policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
-            amp_loss = 0.5 * (expert_loss + policy_loss)
-            # 梯度惩罚沿用旧口径：在「未归一化」的原始专家窗口上求梯度（N=2 时与旧的 cat([s, s_next]) 相同）
-            grad_pen_loss = self.discriminator.compute_grad_pen(sample_amp_expert, lambda_=10)
-            loss += self.amploss_coef * amp_loss + self.amploss_coef * grad_pen_loss
+            if has_expert:
+                policy_window = self._split_amp_window(sample_amp_policy)
+                expert_window = self._split_amp_window(sample_amp_expert)
+                with torch.no_grad():
+                    policy_window = self._normalize_amp_window(policy_window)
+                    expert_window = self._normalize_amp_window(expert_window)
+                policy_d = self.discriminator(policy_window.reshape(policy_window.shape[0], -1), label=policy_label)
+                expert_d = self.discriminator(expert_window.reshape(expert_window.shape[0], -1), label=expert_label)
+                expert_loss = torch.nn.MSELoss()(expert_d, torch.ones(expert_d.size(), device=self.device))
+                policy_loss = torch.nn.MSELoss()(policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
+                amp_loss = 0.5 * (expert_loss + policy_loss)
+                # 梯度惩罚沿用旧口径：在「未归一化」的原始专家窗口上求梯度（N=2 时与旧的 cat([s, s_next]) 相同）
+                grad_pen_loss = self.discriminator.compute_grad_pen(sample_amp_expert, lambda_=10, label=expert_label)
+                loss += self.amploss_coef * amp_loss + self.amploss_coef * grad_pen_loss
 
             # Compute the gradients
             # -- For PPO
@@ -485,7 +497,7 @@ class AMPPPO:
             if self.rnd_optimizer:
                 self.rnd_optimizer.step()
 
-            if self.amp_normalizer is not None:
+            if self.amp_normalizer is not None and has_expert:
                 self.amp_normalizer.update(policy_window.reshape(-1, self.amp_obs_dim))
                 self.amp_normalizer.update(expert_window.reshape(-1, self.amp_obs_dim))
 
@@ -493,10 +505,11 @@ class AMPPPO:
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
             mean_entropy += entropy_batch.mean().item()
-            mean_amp_loss += amp_loss.item()
-            mean_grad_pen_loss += grad_pen_loss.item()
-            mean_policy_pred += policy_d.mean().item()
-            mean_expert_pred += expert_d.mean().item()
+            if has_expert:
+                mean_amp_loss += amp_loss.item()
+                mean_grad_pen_loss += grad_pen_loss.item()
+                mean_policy_pred += policy_d.mean().item()
+                mean_expert_pred += expert_d.mean().item()
             # -- RND loss
             if mean_rnd_loss is not None:
                 mean_rnd_loss += rnd_loss.item()

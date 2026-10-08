@@ -95,6 +95,7 @@ class AMPLoader:
         num_preload_transitions=1000000,
         motion_files=glob.glob("datasets/motion_amp_expert/*"),
         num_frames=2,
+        cmd_ranges=None,
     ):
         """Expert dataset provides AMP observations from Dog mocap dataset.
 
@@ -104,6 +105,8 @@ class AMPLoader:
         self.device = device
         self.time_between_frames = time_between_frames
         self.num_frames = int(num_frames)
+        # label -> list of (vx_range, vy_range, wz_range); user-defined, independent of commands.modes
+        self.cmd_ranges = cmd_ranges or {}
         if self.num_frames < 2:
             raise ValueError(f"num_frames 至少为 2（当前 {self.num_frames}），否则无法构成时间窗口。")
         all_names_list = list(self.DATASET_BODY_NAMES)   # ← 用数据集自己的顺序，不用机器人 body_names
@@ -393,6 +396,13 @@ class AMPLoader:
         for idx, lab in enumerate(self.trajectory_labels):
             self.label_to_traj.setdefault(lab, []).append(idx)
         self.has_command_labels = any(lab is not None for lab in self.trajectory_labels)
+        self.label_names = [lab for lab in self.label_to_traj.keys() if lab is not None]
+        self.num_labels = len(self.label_names)
+        self._label_index = {lab: i for i, lab in enumerate(self.label_names)}
+        self._label_cand = [
+            np.asarray(self.label_to_traj[lab], dtype=np.int64) for lab in self.label_names
+        ]
+        self._label_windows = None
         self._label_names = list(self.label_to_traj.keys())
         self._label_traj_list = [self.label_to_traj[lab] for lab in self._label_names]
         _centroids = [
@@ -414,6 +424,18 @@ class AMPLoader:
             # 直接预加载扁平化的 num_frames 帧窗口：(M, num_frames * frame_dim)，帧顺序由旧到新
             self.preloaded_s = self.get_frame_window_at_time_batch(traj_idxs, times + self.time_between_frames)
             print(f"Finished preloading, preloaded_s shape = {tuple(self.preloaded_s.shape)}")
+
+            # 按 label 预加载 expert 窗口池 -> 训练时 O(1) gather（避免每 mini-batch 现算插值）
+            if self.has_command_labels and self.num_labels > 0:
+                per_label = max(1, num_preload_transitions // self.num_labels)
+                self._label_windows = []
+                for cand in self._label_cand:
+                    idxs = np.random.choice(cand, size=per_label, replace=True)
+                    t = self.traj_time_sample_batch(idxs)
+                    self._label_windows.append(
+                        self.get_frame_window_at_time_batch(idxs, t + self.time_between_frames)
+                    )
+                print(f"[AMPLoader] per-label pools: {per_label} windows x {self.num_labels} labels")
 
         self.all_trajectories_full = torch.vstack(self.trajectories_full)
         self.batch_idx = 0
@@ -599,28 +621,78 @@ class AMPLoader:
                 window = self.get_frame_window_at_time_batch(traj_idxs, times + self.time_between_frames)
             yield window
 
-    def _classify_cmd(self, cmd):
-        """Map each (vx, vy, wz) command to the nearest command-label centroid."""
-        scale = self.motion_cmds_abs.to(cmd.device).clamp(min=1e-3)
-        centroids = self.label_centroids.to(cmd.device)
-        diff = (cmd[:, None, :] - centroids[None, :, :]) / scale[None, None, :]
-        return (diff ** 2).sum(dim=-1).argmin(dim=1)
+    def _cmd_label_ids(self, cmd_batch):
+        """(B,) int64 label index per command; -1 when no range matches (vectorized)."""
+        cmd = cmd_batch[:, :3].detach().cpu().numpy()
+        ids = np.full(cmd.shape[0], -1, dtype=np.int64)
+        eps = 1e-6
+        for name, range_list in self.cmd_ranges.items():
+            li = self._label_index.get(name)
+            if li is None:
+                continue
+            for (x0, x1), (y0, y1), (z0, z1) in range_list:
+                m = (
+                    (cmd[:, 0] >= x0 - eps) & (cmd[:, 0] <= x1 + eps)
+                    & (cmd[:, 1] >= y0 - eps) & (cmd[:, 1] <= y1 + eps)
+                    & (cmd[:, 2] >= z0 - eps) & (cmd[:, 2] <= z1 + eps)
+                )
+                ids[m] = li
+        return ids
+
+    def cmd_label_onehot(self, cmd_batch):
+        """(B, num_labels) one-hot of the command label; all-zero row when nothing matches (torch, no host sync)."""
+        cmd = cmd_batch[:, :3].detach()
+        ids = torch.full((cmd.shape[0],), -1, dtype=torch.long, device=cmd.device)
+        eps = 1e-6
+        for name, range_list in self.cmd_ranges.items():
+            li = self._label_index.get(name)
+            if li is None:
+                continue
+            for (x0, x1), (y0, y1), (z0, z1) in range_list:
+                m = (
+                    (cmd[:, 0] >= x0 - eps) & (cmd[:, 0] <= x1 + eps)
+                    & (cmd[:, 1] >= y0 - eps) & (cmd[:, 1] <= y1 + eps)
+                    & (cmd[:, 2] >= z0 - eps) & (cmd[:, 2] <= z1 + eps)
+                )
+                ids[m] = li
+        valid = ids >= 0
+        out = torch.zeros(cmd.shape[0], self.num_labels, device=cmd.device, dtype=torch.float32)
+        if self.num_labels > 0 and valid.any():
+            out[torch.nonzero(valid).flatten(), ids[valid]] = 1.0
+        return out
 
     def amp_expert_sample_by_cmd(self, cmd_batch):
-        """Return expert windows (B, num_frames * frame_dim) matched to the given commands.
-
-        Each command is classified to a label; the expert window is then drawn from a
-        trajectory carrying that label (randomly among them).
-        """
-        cmd = cmd_batch[:, :3].detach().float()
-        b = cmd.shape[0]
-        label_idx = self._classify_cmd(cmd).cpu().numpy()
-        traj_idxs = np.empty(b, dtype=np.int64)
-        for j in range(b):
-            cand = self._label_traj_list[int(label_idx[j])]
-            traj_idxs[j] = self.weighted_traj_idx_sample() if len(cand) == 0 else cand[np.random.randint(len(cand))]
+        """Return (windows, label_onehot) for commands with a matched label; (None, None) if none."""
+        ids = self._cmd_label_ids(cmd_batch)
+        valid = ids >= 0
+        if not valid.any():
+            return None, None
+        ids = ids[valid]
+        if self._label_windows is not None:
+            # fast path: gather from per-label preloaded pools
+            counts = np.bincount(ids, minlength=self.num_labels)
+            parts, rows = [], []
+            for li in np.nonzero(counts)[0]:
+                pool = self._label_windows[int(li)]
+                k = int(counts[li])
+                pick = torch.from_numpy(np.random.randint(0, pool.shape[0], size=k)).to(pool.device)
+                parts.append(pool[pick])
+                rows.append(torch.full((k,), int(li), dtype=torch.long, device=pool.device))
+            windows = torch.cat(parts, dim=0)
+            onehot = torch.nn.functional.one_hot(
+                torch.cat(rows), num_classes=self.num_labels
+            ).to(dtype=torch.float32)
+            return windows, onehot
+        traj_idxs = np.empty(ids.shape[0], dtype=np.int64)
+        for li in np.unique(ids):
+            cand = self._label_cand[int(li)]
+            m = ids == li
+            traj_idxs[m] = cand[np.random.randint(0, len(cand), size=int(m.sum()))]
         times = self.traj_time_sample_batch(traj_idxs)
-        return self.get_frame_window_at_time_batch(traj_idxs, times + self.time_between_frames)
+        windows = self.get_frame_window_at_time_batch(traj_idxs, times + self.time_between_frames)
+        onehot = torch.zeros(ids.shape[0], self.num_labels, device=windows.device)
+        onehot[torch.arange(ids.shape[0], device=windows.device), torch.from_numpy(ids).to(windows.device)] = 1.0
+        return windows, onehot
 
     @property
     def observation_dim(self):

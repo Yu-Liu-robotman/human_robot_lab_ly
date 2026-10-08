@@ -70,7 +70,7 @@ class Z129DOFRewardCfg(RewardCfg):
     dof_pos_limits = RewTerm(
         func=mdp.joint_pos_limits,
         weight=-10.0,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["leg_.*_joint"])},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["leg_.*_joint", "torso_.*_joint"])},
     )
     energy = RewTerm(func=mdp.energy, weight=-1e-3)
     body_orientation_l2 = RewTerm(func=mdp.body_orientation_l2, weight=-1.0, 
@@ -199,19 +199,19 @@ class Z129DOFRewardCfg(RewardCfg):
         },
     ) 
     # add* 行走步态优化
-    feet_lateral_placement = RewTerm(
-        func=z1_mdp.feet_lateral_placement_penalty,
-        weight=-2.0,                     
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
-            "target_gap": 0.20,          
-            "gap_tolerance": 0.030,
-            "midline_tolerance": 0.02,
-            "command_threshold": COMMAND_THRESHOLD,
-            "max_gap": 0.25,
-            "include_turning": True,
-        },
-    )
+    # feet_lateral_placement = RewTerm(
+    #     func=z1_mdp.feet_lateral_placement_penalty,
+    #     weight=-2.0,                     
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+    #         "target_gap": 0.20,          
+    #         "gap_tolerance": 0.030,
+    #         "midline_tolerance": 0.02,
+    #         "command_threshold": COMMAND_THRESHOLD,
+    #         "max_gap": 0.25,
+    #         "include_turning": True,
+    #     },
+    # )
     feet_flat_landing = RewTerm(
         func=z1_mdp.feet_flat_landing_penalty,
         weight=-1.0,
@@ -454,27 +454,27 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     load_checkpoint = "model_.*.pt"
 
     # amp parameter
-    amp_reward_coef = 0.02 * 6
-    amp_task_reward_lerp = 0.5
+    amp_reward_coef = 0.4
+    amp_task_reward_lerp = 0.7
 
     amp_motion_files = [
                             # 前进 vx > 0
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/t2pro_walk_0601_new.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_forward_segment_0000-0343.txt",
+                            ("walk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/t2pro_walk_0601_new.txt"),
+                            ("walk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_forward_segment_0000-0343.txt"),
                             # 走转 vx > 0 wz > 0
                             # "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_left_segment_4707-4929.txt",
                             # "humanoid/envs/z1_29dof_amp_sym_flat/datasets/20dof/txt/20dof_forward_right_segment_4474-4696.txt",
 
                             # 后退 vx < 0
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/t2pro_walk_0601_new_backward.txt",
+                            ("walk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/t2pro_walk_0601_new_backward.txt"),
 
                             # 横移 vy > 0
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_side_left_segment_2475-2747.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_side_right_segment_1727-1999.txt",
+                            ("side", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_side_left_segment_2475-2747.txt"),
+                            ("side", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_side_right_segment_1727-1999.txt"),
 
                             # 原地转向 wz > 0
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_turn_left_segment_3649-3922.txt",
-                            "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_turn_right_segment_3176-3449.txt",
+                            ("turn", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_turn_left_segment_3649-3922.txt"),
+                            ("turn", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_turn_right_segment_3176-3449.txt"),
 
                             # 站立
                             # "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_stand_segment_5589-5748.txt",
@@ -482,6 +482,12 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
                             ]
     amp_num_preload_transitions = 200000
     amp_num_frames = 4
+    # label -> [(vx_range, vy_range, wz_range), ...]；必须排除 0，否则 stand/walk_turn 会被误匹配
+    amp_motion_cmd_ranges = {
+        "walk": [((0.1, 1.2), (0.0, 0.0), (0.0, 0.0)), ((-0.7, -0.1), (0.0, 0.0), (0.0, 0.0))],
+        "side": [((0.0, 0.0), (0.1, 0.5), (0.0, 0.0)), ((0.0, 0.0), (-0.5, -0.1), (0.0, 0.0))],
+        "turn": [((0.0, 0.0), (0.0, 0.0), (0.1, 0.7)), ((0.0, 0.0), (0.0, 0.0), (-0.7, -0.1))],
+    }
     # amp_discr_hidden_dims = [1024, 512, 256]
     amp_discr_hidden_dims = [1024, 512]
     min_normalized_std = [0.05] * 15

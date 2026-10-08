@@ -132,6 +132,7 @@ class AmpOnPolicyRunner:
             num_preload_transitions=train_cfg["amp_num_preload_transitions"],
             motion_files=train_cfg["amp_motion_files"],
             num_frames=self.amp_num_frames,
+            cmd_ranges=train_cfg.get("amp_motion_cmd_ranges"),
         )
         # 供 learn() 使用（learn 里无法访问 __init__ 的局部变量）
         self.amp_data = amp_data
@@ -144,6 +145,7 @@ class AmpOnPolicyRunner:
             device,
             train_cfg["amp_task_reward_lerp"],
             num_frames=self.amp_num_frames,
+            num_labels=getattr(amp_data, "num_labels", 0),
         ).to(self.device)
         min_std = torch.zeros(len(train_cfg["min_normalized_std"]), device=self.device, requires_grad=False)
 
@@ -298,8 +300,13 @@ class AmpOnPolicyRunner:
                     # 拼出 num_frames 帧窗口（由旧到新）：[..., s_t, s_{t+1}]
                     amp_window = torch.cat([self.amp_frame_hist, next_amp_obs.unsqueeze(1)], dim=1)
 
+                    # 当前指令对应的 style label（one-hot，无匹配则为全零）
+                    _amp_label = None
+                    if getattr(self.amp_data, "num_labels", 0) > 0:
+                        _amp_label = self.amp_data.cmd_label_onehot(self.env.command_generator.command).to(self.device)
+
                     rewards, amp_d, step_style_reward = self.alg.discriminator.predict_style_reward(
-                        amp_window, rewards, normalizer=self.alg.amp_normalizer
+                        amp_window, rewards, normalizer=self.alg.amp_normalizer, label=_amp_label
                     )
                     # AMP style reward（纯判别器奖励，未与 task reward 混合）仅用于日志
                     amp_style_sum += step_style_reward.mean().item()
@@ -319,7 +326,7 @@ class AmpOnPolicyRunner:
                         )
 
                     amp_obs = next_amp_obs
-                    self.alg.process_env_step(rewards, dones, infos, amp_window)
+                    self.alg.process_env_step(rewards, dones, infos, amp_window, amp_label=_amp_label)
 
                     # Extract intrinsic rewards (only for logging)
                     intrinsic_rewards = self.alg.intrinsic_rewards if self.alg.rnd else None
