@@ -7,7 +7,7 @@ python3 humanoid/scripts/fdsim2ros.py --experiment_name z1_29dof_amp_sym_flat --
 python3 humanoid/scripts/fdsim2ros.py --experiment_name z1_29dof_amp_sym_flat --ub_rand
 
 # 加码：幅值 ×1.5 + 每根手臂连杆随机 +0.1~0.2 kg（14 根约 +2 kg）
-python3 humanoid/scripts/fdsim2ros.py --experiment_name z1_29dof_amp_sym_flat \
+python3 humanoid/scripts/fdsim2ros.py --experiment_name z1_29dof_15amp_sym_flat \
     --ub_rand --ub_amp 1.5 --ub_payload 0.2
 
 # 只压质量、不甩手（隔离「负重」这一个变量）

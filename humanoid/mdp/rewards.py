@@ -137,7 +137,7 @@ def adaptive_flat_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = Scene
     # max_scale = torch.where(env.walk_mask[:, 0], 0.6, 1.0)
     # scale = torch.clamp(scale, max=max_scale)
     reward = torch.sum(torch.square(gravity_xy), dim=1)
-    scale = env.stand_mask[:, 0].float() * 2.0
+    scale = env.stand_mask[:, 0].float() * 3.0
     return reward * scale
 
 def is_terminated(env: BaseEnv) -> torch.Tensor:
@@ -204,7 +204,7 @@ def body_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg
         asset.data.body_quat_w[:, asset_cfg.body_ids[0], :], asset.data.GRAVITY_VEC_W
     )
     reward = torch.sum(torch.square(body_orientation[:, :2]), dim=1)
-    scale = env.stand_mask[:, 0].float() * 2.0
+    scale = env.stand_mask[:, 0].float() * 3.0
     return  reward * scale
 
 
