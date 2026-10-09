@@ -120,6 +120,10 @@ class T2proEnv12DOF(BaseEnv):
 
         self.init_buffers()
 
+        # ---- IMU 安装/零点偏置（per-episode 常值，仅作用于 actor 观测）----
+        self.imu_R_bias = torch.eye(3, device=self.device).repeat(self.num_envs, 1, 1)
+        self.imu_angvel_bias = torch.zeros(self.num_envs, 3, device=self.device)
+
         env_ids = torch.arange(self.num_envs, device=self.device)
         self.event_manager = EventManager(self.cfg.domain_rand.events, self)
         if "startup" in self.event_manager.available_modes:
@@ -368,6 +372,15 @@ class T2proEnv12DOF(BaseEnv):
         current_actor_obs, current_critic_obs = self.compute_current_observations()
         if self.add_noise:
             current_actor_obs += (2 * torch.rand_like(current_actor_obs) - 1) * self.noise_scale_vec
+            # IMU 安装/零点偏置：同一 R_bias 作用于姿态与陀螺，再叠加陀螺零偏
+            g0 = self.obs_index_imu_waist_orientation
+            a0 = self.obs_index_imu_waist_angvel
+            current_actor_obs[:, g0 : g0 + 3] = torch.bmm(
+                self.imu_R_bias, current_actor_obs[:, g0 : g0 + 3].unsqueeze(-1)
+            ).squeeze(-1)
+            current_actor_obs[:, a0 : a0 + 3] = torch.bmm(
+                self.imu_R_bias, current_actor_obs[:, a0 : a0 + 3].unsqueeze(-1)
+            ).squeeze(-1) + self.imu_angvel_bias
 
         self.actor_obs_buffer.append(current_actor_obs)
         self.critic_obs_buffer.append(current_critic_obs)

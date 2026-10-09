@@ -402,6 +402,15 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
                 "push_z_range": (-1.0, 1.0),   # z 单独给，避免过大向上力
             },
         )
+        # add* IMU 安装/零点偏置 + 陀螺零偏：每个 episode 重采样（只进 actor 观测）
+        self.domain_rand.events.imu_bias = EventTerm(
+            func=mdp.randomize_imu_bias,
+            mode="reset",
+            params={
+                "rpy_max": (0.03, 0.03, 0.0),   # roll/pitch ≤5.7°, yaw ≤8.6°
+                "angvel_bias_max": 0.012,         # rad/s
+            },
+        )
 
 @configclass
 class Z129DOFFlatAgentCfg(BaseAgentCfg):

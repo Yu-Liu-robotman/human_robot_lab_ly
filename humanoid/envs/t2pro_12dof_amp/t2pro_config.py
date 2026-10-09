@@ -1,3 +1,4 @@
+from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
@@ -224,6 +225,15 @@ class T2proFlatEnvCfg(BaseEnvCfg):
         self.robot.terminate_contacts_body_names = ["base_link"]
         self.robot.feet_body_names = ["leg_left_ankle_roll_link", "leg_right_ankle_roll_link"]
         self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = ["base_link"]
+        # add* IMU 安装/零点偏置 + 陀螺零偏：每个 episode 重采样（只进 actor 观测）
+        self.domain_rand.events.imu_bias = EventTerm(
+            func=mdp.randomize_imu_bias,
+            mode="reset",
+            params={
+                "rpy_max": (0.10, 0.10, 0.15),   # roll/pitch ≤5.7°, yaw ≤8.6°
+                "angvel_bias_max": 0.05,         # rad/s
+            },
+        )
         self.robot.action_scale = T2PRO_ACTION_SCALE
         self.commands.ranges.lin_vel_x = (-0.6, 1.5)
         self.commands.ranges.lin_vel_y = (-0.6, 0.6)
