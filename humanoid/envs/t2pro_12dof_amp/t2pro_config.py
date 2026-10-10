@@ -230,8 +230,8 @@ class T2proFlatEnvCfg(BaseEnvCfg):
             func=mdp.randomize_imu_bias,
             mode="reset",
             params={
-                "rpy_max": (0.10, 0.10, 0.15),   # roll/pitch ≤5.7°, yaw ≤8.6°
-                "angvel_bias_max": 0.05,         # rad/s
+                "rpy_max": (0.03, 0.03, 0.0),   # roll/pitch ≤1.72°(0.03 rad)，yaw 关闭
+                "angvel_bias_max": 0.012,        # rad/s ≈0.69°/s
             },
         )
         self.robot.action_scale = T2PRO_ACTION_SCALE
