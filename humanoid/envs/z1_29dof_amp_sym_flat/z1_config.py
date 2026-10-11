@@ -58,7 +58,7 @@ COMMAND_THRESHOLD = 0.1
 @configclass
 class Z129DOFRewardCfg(RewardCfg):
     track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=2.0, params={"std": 0.35}) # 3.0
-    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=2.0, params={"std": 0.35})   # 3.0
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=1.25, params={"std": 0.25})   # 3.0
     # -- penalties
     flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-1.0)
     lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-0.4)
@@ -79,7 +79,7 @@ class Z129DOFRewardCfg(RewardCfg):
         weight=1.0,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
-            "threshold": 0.12,
+            "threshold": 0.18,
         },
     )
     feet_slide = RewTerm(
@@ -119,14 +119,36 @@ class Z129DOFRewardCfg(RewardCfg):
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
             "contact_height": 0.037,
-            "target_clearance": 0.037,
-            "minimum_air_time": 0.08,
-            "maximum_air_time": 0.20,
+            "target_clearance": 0.084,
+            "minimum_air_time": 0.13,
+            "maximum_air_time": 0.24,
             "minimum_support_time": 0.04,
             "minimum_speed": COMMAND_THRESHOLD,
             "maximum_forward_speed": 0.8,
         },
     )  
+    # add* 摆动腿脚跟在髋后方 = 后撩（机身系前后方向，之前完全没人管）
+    swing_foot_behind = RewTerm(
+        func=z1_mdp.swing_foot_behind_penalty,
+        weight=-0.5,        # -1.5 -> -0.5（只做轻微压制）
+        params={
+            "hip_cfg": SceneEntityCfg(
+                "robot",
+                body_names=["leg_left_hip_pitch_link", "leg_right_hip_pitch_link"],
+                preserve_order=True,
+            ),
+            "ankle_cfg": SceneEntityCfg(
+                "robot",
+                body_names=["leg_left_ankle_roll_link", "leg_right_ankle_roll_link"],
+                preserve_order=True,
+            ),
+            # 0.06 -> 0.10：只罚「明显后撩」，给正常摆腿留出空间
+            "max_behind": 0.10,
+            "softness": 0.05,
+            "swing_height_eps": 0.01,
+            "command_threshold": COMMAND_THRESHOLD,
+        },
+    )
     # add* 原地踏步优化
     double_support_penalize = RewTerm(
         func=mdp.zero_double_support_penalize,
@@ -159,17 +181,17 @@ class Z129DOFRewardCfg(RewardCfg):
     )
     feet_impact_vel = RewTerm(
         func=z1_mdp.feet_impact_vel_soft,
-        weight=-0.5,
+        weight=-3.0,                  # -2.0 -> -3.0
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot",
                 body_names=["leg_left_ankle_roll_link", "leg_right_ankle_roll_link"],
                 preserve_order=True,
             ),
-            "height_scale": 0.04,
-            "free_descend_vel": 0.08,     # 新增
+            "height_scale": 0.15,    
+            "free_descend_vel": 0.06, 
             "command_threshold": COMMAND_THRESHOLD,
-            "include_turning": False,
+            "include_turning": False,  
         },
     )
 # -----------------------------------------------------------
@@ -227,37 +249,6 @@ class Z129DOFRewardCfg(RewardCfg):
         },
     )
 
-    # add* 落地后膝盖尽量打直
-    knee_extend_on_contact = RewTerm(
-        func=z1_mdp.knee_extend_on_contact_penalty,
-        weight=-0.5,
-        params={
-            "sensor_cfg": SceneEntityCfg(
-                "contact_sensor",
-                body_names=["leg_left_ankle_roll_link", "leg_right_ankle_roll_link"],
-                preserve_order=True,
-            ),
-            "asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=["leg_left_knee_joint", "leg_right_knee_joint"],
-                preserve_order=True,
-            ),
-            "knee_slack": 0.15,
-            "contact_force_threshold": 5.0,
-            "command_threshold": COMMAND_THRESHOLD,
-            "include_turning": False,
-        },
-    )
-    # add* 两脚最小间距（防撞）：低于 0.10 m 重罚，站立/行走/转弯全程生效
-    feet_min_gap = RewTerm(
-        func=z1_mdp.feet_min_gap_penalty,
-        weight=-1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=[".*_ankle_roll_link"]),
-            "min_gap": 0.08,      # 硬下界
-            "softness": 0.01,     # 0.1 m 以下就吃满惩罚
-        },
-    )
 
 @configclass
 class Z129DOFTerminationCfg:
@@ -449,22 +440,22 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     load_checkpoint = "model_.*.pt"
 
     # amp parameter
-    amp_reward_coef = 0.02 * 6
+    amp_reward_coef = 0.02 * 8
     amp_task_reward_lerp = 0.5
 
     amp_motion_files = [
                             # 前进 vx > 0
                             ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/t2pro_walk_0601_new.txt"),
-                            # ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/forward_low_segment_0914-0988.txt"),
+                            ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_forward_left_segment_4707-4929.txt"),
                             # ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/forward_mid_segment_2452-2548.txt"),
                             # ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/forward_mid2_segment_2914-3011.txt"),
                             # ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_forward_segment_0000-0343.txt"),
                             # 走转 vx > 0 wz > 0
-                            # ("fwalk_turn", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/forward_mid_left_segment_0914-0988.txt"),
-                            # ("fwalk_turn", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/forward_mid_right_segment_0914-0988.txt"),
+                            ("fwalk_turn", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_forward_left_segment_4707-4929.txt"),
+                            ("fwalk_turn", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_forward_right_segment_4474-4696.txt"),
                             # 后退 vx < 0
                             ("bwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/t2pro_walk_0601_new_backward.txt"),
-
+                            ("bwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_back_segment_0351-0743.txt"),
                             # 横移 vy > 0
                             ("side", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_side_left_segment_2475-2747.txt"),
                             ("side", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_side_right_segment_1727-1999.txt"),
@@ -485,13 +476,13 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
         "bwalk": [((WALK_VX_BACK, -0.1), (0.0, 0.0), (0.0, 0.0))],
         "side": [((0.0, 0.0), (0.1, WALK_VY), (0.0, 0.0)), ((0.0, 0.0), (-WALK_VY, -0.1), (0.0, 0.0))],
         "turn": [((0.0, 0.0), (0.0, 0.0), (0.1, WALK_WZ)), ((0.0, 0.0), (0.0, 0.0), (-WALK_WZ, -0.1))],
-        # "fwalk_turn": [((0.1, WALK_VX), (0.0, 0.0), (0.1, WALK_WZ)), ((0.1, WALK_VX), (0.0, 0.0), (-WALK_WZ, -0.1))],
+        "fwalk_turn": [((0.1, WALK_VX), (0.0, 0.0), (0.1, WALK_WZ)), ((0.1, WALK_VX), (0.0, 0.0), (-WALK_WZ, -0.1))],
     }
     # amp_discr_hidden_dims = [1024, 512, 256]
     amp_discr_hidden_dims = [1024, 512]
     min_normalized_std = [0.05] * 15
-    amp_body_names=KEY_POS_LIST
-    amp_anchor_name=ANCHOR_NAME
+    amp_body_names = KEY_POS_LIST
+    amp_anchor_name = ANCHOR_NAME
     # add* 12dof amp 
     # amp_use_leg12dof = True
     amp_loader = "z129dof_15dof"

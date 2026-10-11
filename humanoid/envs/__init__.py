@@ -32,3 +32,21 @@ try:
     task_registry.register("z1_29dof_15amp_sym_flat", Z1AmpSymEnv29DOF, Z129DOFAmpFlatSymEnvCfg(), Z129DOFAmpFlatSymAgentCfg())
 except Exception as _e:  # noqa: BLE001
     print(f"[WARN] z1_29dof 任务注册失败（humanoid/assets/z1/z1_29dof.py 可能尚未创建）: {_e}")
+
+
+try:
+    from humanoid.envs.exbot_29dof_amp_sym_flat.exbot_config import (
+        Exbot29DOFFlatAgentCfg,
+        Exbot29DOFFlatEnvCfg,
+        Exbot29DOFAmpFlatEnvCfg,
+        Exbot29DOFAmpFlatAgentCfg,
+        Exbot29DOFAmpFlatSymEnvCfg,
+        Exbot29DOFAmpFlatSymAgentCfg,
+    )
+    from humanoid.envs.exbot_29dof_amp_sym_flat.exbot_env import Exbot29DOFAmpSymEnv
+
+    task_registry.register("exbot_29dof_flat", Exbot29DOFAmpSymEnv, Exbot29DOFFlatEnvCfg(), Exbot29DOFFlatAgentCfg())
+    task_registry.register("exbot_29dof_amp_flat", Exbot29DOFAmpSymEnv, Exbot29DOFAmpFlatEnvCfg(), Exbot29DOFAmpFlatAgentCfg())
+    task_registry.register("exbot_29dof_15amp_sym_flat", Exbot29DOFAmpSymEnv, Exbot29DOFAmpFlatSymEnvCfg(), Exbot29DOFAmpFlatSymAgentCfg())
+except Exception as _e:  # noqa: BLE001
+    print(f"[WARN] exbot_29dof 任务注册失败（humanoid/assets/exbot/exbot.py 缺少 EXBOT_ACTION_SCALE / EXBOT_KPS / EXBOT_KDS？）: {_e}")

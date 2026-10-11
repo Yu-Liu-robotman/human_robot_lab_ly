@@ -520,3 +520,37 @@ def swing_air_time_overrun_penalty(
         )
         gate = gate * (~turning).float()
     return cost * gate
+
+
+def swing_foot_behind_penalty(
+    env: BaseEnv,
+    hip_cfg: SceneEntityCfg,
+    ankle_cfg: SceneEntityCfg,
+    max_behind: float = 0.06,
+    softness: float = 0.05,
+    swing_height_eps: float = 0.01,
+    command_threshold: float = 0.1,
+) -> torch.Tensor:
+    """摆动腿脚跟在髋关节后方超过 max_behind(m) 就罚 —— 专治「后撩」。
+
+    swing_foot_clearance 只考核脚底**高度**，屈膝把脚跟往后上撩与屈髋抬大腿对它等价；
+    feet_air_time 又奖励滞空。两者叠加会主动奖励后撩。这里补上缺失的「机身系前后(x)」维度。
+
+    用两个独立 SceneEntityCfg 传髋/踝，避开 [::2]/[1::2] 在 preserve_order 下的排序歧义
+    （preserve_order=True 返回的是 articulation 自身 body 顺序，不是传入列表顺序）。
+    """
+    asset: Articulation = env.scene[ankle_cfg.name]
+    rel_w = (
+        asset.data.body_pos_w[:, ankle_cfg.body_ids, :]
+        - asset.data.body_pos_w[:, hip_cfg.body_ids, :]
+    )                                                                    # (N, 2, 3)
+    x_axis = math_utils.matrix_from_quat(asset.data.root_quat_w)[:, :, 0]  # 机身 x 轴 = 前方
+    x_b = torch.sum(rel_w * x_axis.unsqueeze(1), dim=-1)                 # (N, 2)，脚在髋前方为正
+
+    # 只罚摆动腿：用两脚高度差判定，不依赖 contact_sensor 的 body 顺序
+    foot_z = asset.data.body_pos_w[:, ankle_cfg.body_ids, 2]             # (N, 2)
+    swing = foot_z > (foot_z.min(dim=-1, keepdim=True)[0] + swing_height_eps)
+
+    behind = torch.relu(-x_b - max_behind) / max(softness, 1e-6)
+    gate = (torch.linalg.vector_norm(env.command_generator.command[:, :3], dim=1) > command_threshold).float()
+    return torch.sum(torch.clamp(behind, 0.0, 1.0) * swing.float(), dim=1) * gate
