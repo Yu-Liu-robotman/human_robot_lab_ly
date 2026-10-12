@@ -367,7 +367,9 @@ class Z1AmpSymEnv29DOF(BaseEnv):
         dq = joint_vel[:, self.dof_ids]
         action = self.action_buffer._circular_buffer.buffer[:, -1, :]
         add_command = torch.zeros_like(command)
-        add_command[:, 0] = self.stand_flag[:, 0].clone()
+        # 踏步/站立模式 token：用 0/1 而不是 ±1。原来是 ±1，落在 command 块里会被策略当成
+        # 「cmd_vx=∓1」的命令 → 踏步时摆出后倾（准备后退）的姿势。0/1 同样能区分两半 env，但不带方向。
+        add_command[:, 0] = (self.stand_flag[:, 0] > 0).float()
         current_actor_obs = torch.cat(
             [
                 command * self.obs_scales.commands,

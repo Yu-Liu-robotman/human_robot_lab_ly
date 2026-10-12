@@ -138,7 +138,7 @@ def adaptive_flat_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = Scene
     # scale = torch.clamp(scale, max=max_scale)
     reward = torch.sum(torch.square(gravity_xy), dim=1)
     scale = env.stand_mask[:, 0].float() * 3.0
-    return reward 
+    return reward * scale
 
 def is_terminated(env: BaseEnv) -> torch.Tensor:
     """Penalize terminated episodes that don't correspond to episodic timeouts."""
@@ -198,14 +198,36 @@ def single_support_joint_deviation_l1(env: BaseEnv, sensor_cfg: SceneEntityCfg, 
     return torch.sum(torch.abs(angle), dim=1) * scale
 
 
-def body_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+def body_orientation_l2(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    tolerance: float = 0.05,      # 死区(rad) ≈2.9°：小于它不罚
+    stand_only: bool = False,     # True = 只在站立/原地踏步时生效（旧行为）
+) -> torch.Tensor:
+    """机身（含 torso 关节）偏离竖直的惩罚。
+
+    与旧版两点不同：
+    1. 用 ‖g_xy‖ = sin(总倾角) 代替 Σg_xy²，值域 [0,1] 且与角度近似线性；
+    2. 出死区后**线性**（梯度恒定），不像平方那样在接近竖直时梯度→0。
+       平方项只能给一个“软弹簧”，平衡点是「边际收益 = 边际代价」的非零倾角；
+       线性项才能真正把姿态钉在竖直附近。
+    """
     asset: Articulation = env.scene[asset_cfg.name]
     body_orientation = math_utils.quat_apply_inverse(
         asset.data.body_quat_w[:, asset_cfg.body_ids[0], :], asset.data.GRAVITY_VEC_W
     )
-    reward = torch.sum(torch.square(body_orientation[:, :2]), dim=1)
-    scale = env.stand_mask[:, 0].float() * 3.0
-    return  reward * scale
+    tilt = torch.linalg.vector_norm(body_orientation[:, :2], dim=1)   # ≈ sin(总倾角)
+    reward = torch.relu(tilt - tolerance)
+    if not stand_only:
+        return reward                                          # 全程生效
+    cmd = env.command_generator.command
+    zero_cmd = (
+        (torch.abs(cmd[:, 0]) < 0.1)
+        & (torch.abs(cmd[:, 1]) < 0.1)
+        & (torch.abs(cmd[:, 2]) < 0.02)
+    )
+    active = env.stand_mask[:, 0] | (env.walk_mask[:, 0] & zero_cmd)
+    return reward * active.float() * 3.0
 
 
 def feet_stumble(env: BaseEnv, sensor_cfg: SceneEntityCfg) -> torch.Tensor:

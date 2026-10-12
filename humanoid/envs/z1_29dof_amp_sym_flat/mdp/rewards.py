@@ -448,10 +448,11 @@ def knee_extend_on_contact_penalty(
     asset_cfg: SceneEntityCfg,
     knee_slack: float = 0.05,            # 宽松度 rad
     contact_force_threshold: float = 5.0,
+    swing_extend_after: float = 0.10,    # 摆动超过该时长(s)就开始要求打直；<=0 = 整个摆动相都要求
     command_threshold: float = 0.1,
     include_turning: bool = False,
 ) -> torch.Tensor:
-    """落地后（脚触地时）膝盖尽量打直"""
+    """触地时 + 摆动后半段（落地前）膝盖尽量打直 —— 交叉踢腿时就要开始伸直"""
     sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
     asset: Articulation = env.scene[asset_cfg.name]
 
@@ -461,7 +462,11 @@ def knee_extend_on_contact_penalty(
     contact = (
         sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2] > contact_force_threshold
     ).float()                                                              # (N, 2)
-    cost = torch.sum(err * contact, dim=-1)
+    # 摆动相：air_time 超过 swing_extend_after 后即视为「落地前的交叉踢腿阶段」
+    air_time = sensor.data.current_air_time[:, sensor_cfg.body_ids]        # (N, 2)
+    swing = (air_time > max(swing_extend_after, 0.0)).float()              # <=0 时等价于整个摆动相
+    active = torch.clamp(contact + swing, max=1.0)                         # (N, 2)
+    cost = torch.sum(err * active, dim=-1)
 
     command = env.command_generator.command          # (N, 3) = [vx, vy, wz]
     if include_turning:
