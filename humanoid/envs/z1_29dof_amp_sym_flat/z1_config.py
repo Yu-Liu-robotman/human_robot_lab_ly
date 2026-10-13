@@ -186,8 +186,8 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         # (name, weight, lin_vel_x, lin_vel_y, ang_vel_z)
         self.commands.modes = [
             CommandModeCfg(name="stand", weight=0.20, lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
-            CommandModeCfg(name="forward", weight=0.50, lin_vel_x=(COMMAND_THRESHOLD, WALK_VX), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
-            CommandModeCfg(name="backward", weight=0.30, lin_vel_x=(WALK_VX_BACK, -COMMAND_THRESHOLD), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
+            # CommandModeCfg(name="forward", weight=0.50, lin_vel_x=(COMMAND_THRESHOLD, WALK_VX), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
+            CommandModeCfg(name="backward", weight=0.80, lin_vel_x=(WALK_VX_BACK, -COMMAND_THRESHOLD), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
             # CommandModeCfg(name="side_left", weight=0.05, lin_vel_x=(0.0, 0.0), lin_vel_y=(COMMAND_THRESHOLD, WALK_VY), ang_vel_z=(0.0, 0.0)),
             # CommandModeCfg(name="side_right", weight=0.05, lin_vel_x=(0.0, 0.0), lin_vel_y=(-WALK_VY, -COMMAND_THRESHOLD), ang_vel_z=(0.0, 0.0)),
             # CommandModeCfg(name="turn_left", weight=0.05, lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(COMMAND_THRESHOLD, WALK_WZ)),
@@ -308,10 +308,10 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
 
     amp_motion_files = [
             # 前进 vx > 0
-            ("fwalk_f", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_2935-3005.txt"),
-            ("fwalk_f", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_1_5_segment_0403-0452.txt"),
-            ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_0122-0268.txt"),
-            ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_0478-0608.txt"),
+            # ("fwalk_f", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_2935-3005.txt"),
+            # ("fwalk_f", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_1_5_segment_0403-0452.txt"),
+            # ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_0122-0268.txt"),
+            # ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_0478-0608.txt"),
             # 后退 vx < 0
             ("bwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/t2pro_walk_0601_new_backward.txt"),
 
@@ -330,8 +330,8 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     amp_num_frames = 5
     # label -> [(vx_range, vy_range, wz_range), ...]；必须排除 0，否则 stand/walk_turn 会被误匹配
     amp_motion_cmd_ranges = {
-        "fwalk": [((0.1, 1.0), (0.0, 0.0), (0.0, 0.0))],
-        "fwalk_f": [((1.0, 1.6), (0.0, 0.0), (0.0, 0.0))],
+        # "fwalk": [((0.1, 1.0), (0.0, 0.0), (0.0, 0.0))],
+        # "fwalk_f": [((1.0, 1.6), (0.0, 0.0), (0.0, 0.0))],
         "bwalk": [((-1.0, -0.1), (0.0, 0.0), (0.0, 0.0))],
         # "turn": [((0.0, 0.0), (0.0, 0.0), (0.1, WALK_WZ)), ((0.0, 0.0), (0.0, 0.0), (-WALK_WZ, -0.1))],
     }
