@@ -837,7 +837,13 @@ def leglab_feet_clearance(
 def leglab_stand_still_joint_deviation_l1(
     env: BaseEnv, command_threshold: float = 0.1, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"), stand_cmd: bool = False
 ) -> torch.Tensor:
-    """Penalize offsets from the default joint positions when the command is very small."""
+    """Penalize offsets from the default joint positions when the command is very small.
+
+    NOTE: 只统计**策略可控**的关节（env.dof_ids）。
+    asset_cfg 若写成 ".*_joint" 会匹配到全部 29 个关节，其中 14 个上半身关节由随机大幅
+    运动 / 外部负载驱动，策略根本控制不了 —— 那部分惩罚既削不掉、方差又极大，会把站立 /
+    行走的有效信号淹没（return 被一个常量级负项主导）。
+    """
     # Penalize motion when command is nearly zero.
     if stand_cmd:
         active = env.stand_mask[:, 0].float() # 站立命令时，只有stand_mask为1才惩罚
@@ -847,7 +853,26 @@ def leglab_stand_still_joint_deviation_l1(
         angular_norm = torch.abs(command[:, 2])
         total_command = linear_norm + angular_norm
         active = (total_command < command_threshold).float()
-    return joint_deviation_l1(env, asset_cfg) * active # 没速度时限制所有关节位置
+    return controlled_joint_deviation_l1(env, asset_cfg) * active # 没速度时限制策略可控的关节位置
+
+
+def controlled_joint_deviation_l1(
+    env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """joint_deviation_l1 的受限版本：只统计策略可控的关节（env.dof_ids 与 asset_cfg.joint_ids 的交集）。"""
+    asset: Articulation = env.scene[asset_cfg.name]
+    ids = asset_cfg.joint_ids
+    dof_ids = getattr(env, "dof_ids", None)
+    if dof_ids is not None:
+        allowed = set(dof_ids.tolist()) if torch.is_tensor(dof_ids) else set(int(i) for i in dof_ids)
+        if isinstance(ids, slice):
+            ids = sorted(allowed)
+        else:
+            ids = [int(i) for i in ids if int(i) in allowed]
+        if len(ids) == 0:
+            return torch.zeros(asset.data.joint_pos.shape[0], device=asset.data.joint_pos.device)
+    angle = asset.data.joint_pos[:, ids] - asset.data.default_joint_pos[:, ids]
+    return torch.sum(torch.abs(angle), dim=1)
 
 def double_support_Penalize(
   env: BaseEnv, sensor_cfg: SceneEntityCfg, command_threshold: float = 0.01,
@@ -1413,3 +1438,4 @@ def feet_swing_height_bin(
     # 仅对摆动腿奖励
     reward = reward * (~contact).float()
     return reward.sum(dim=-1)
+

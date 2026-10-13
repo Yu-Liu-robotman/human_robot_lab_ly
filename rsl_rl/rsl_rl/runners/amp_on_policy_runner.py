@@ -133,11 +133,19 @@ class AmpOnPolicyRunner:
             motion_files=train_cfg["amp_motion_files"],
             num_frames=self.amp_num_frames,
             cmd_ranges=train_cfg.get("amp_motion_cmd_ranges"),
+            dynamic_expert_sampling=train_cfg.get("amp_dynamic_expert_sampling", True),
         )
         # 供 learn() 使用（learn 里无法访问 __init__ 的局部变量）
         self.amp_data = amp_data
         self.amp_frame_dim = amp_data.observation_dim
-        amp_normalizer = Normalizer(amp_data.observation_dim)
+        # min_normalized_std：逐维 std 下限。专家数据里恒定维度（std≈0）归一化时会饱和到
+        # ±clip_obs，成为判别器的作弊维度 —— 详见 Normalizer._std()。
+        _min_std = train_cfg.get("min_normalized_std", 0.05)
+        if isinstance(_min_std, (list, tuple)):
+            _min_std = (
+                list(_min_std) if len(_min_std) == amp_data.observation_dim else float(_min_std[0])
+            )
+        amp_normalizer = Normalizer(amp_data.observation_dim, min_std=_min_std)
         discriminator = Discriminator(
             amp_data.observation_dim * self.amp_num_frames,
             train_cfg["amp_reward_coef"],
@@ -149,6 +157,11 @@ class AmpOnPolicyRunner:
         ).to(self.device)
         min_std = torch.zeros(len(train_cfg["min_normalized_std"]), device=self.device, requires_grad=False)
 
+        # Reference uses CircularBuffer(max_len=disc_obs_buffer_size, batch_size=num_envs),
+        # i.e. capacity = steps * num_envs. Our ReplayBuffer is flat (buffer_size, obs_dim),
+        # so the equivalent size must be a multiple of num_envs (one insert = num_envs rows).
+        amp_replay_buffer_size = 200 * self.env.num_envs
+
         # initialize algorithm
         alg_class = eval(self.alg_cfg.pop("class_name"))
         self.alg: AMPPPO = alg_class(
@@ -157,6 +170,7 @@ class AmpOnPolicyRunner:
             amp_data,
             amp_normalizer,
             device=self.device,
+            amp_replay_buffer_size=amp_replay_buffer_size,
             min_std=min_std,
             **self.alg_cfg,
             multi_gpu_cfg=self.multi_gpu_cfg,
@@ -266,9 +280,6 @@ class AmpOnPolicyRunner:
         start_iter = self.current_learning_iteration
         tot_iter = start_iter + num_learning_iterations
         for it in range(start_iter, tot_iter):
-            # 重置本 iteration 的 AMP style reward 累积
-            amp_style_sum = 0.0
-            amp_style_steps = 0
             start = time.time()
             # Rollout
             with torch.inference_mode():
@@ -308,9 +319,6 @@ class AmpOnPolicyRunner:
                     rewards, amp_d, step_style_reward = self.alg.discriminator.predict_style_reward(
                         amp_window, rewards, normalizer=self.alg.amp_normalizer, label=_amp_label
                     )
-                    # AMP style reward（纯判别器奖励，未与 task reward 混合）仅用于日志
-                    amp_style_sum += step_style_reward.mean().item()
-                    amp_style_steps += 1
 
                     # 更新历史窗口；done 的 env 用新 episode 的首帧重置，避免跨 episode 拼窗
                     reset_env_ids = self.env.reset_env_ids
@@ -493,12 +501,6 @@ class AmpOnPolicyRunner:
             for key, value in locs["loss_dict"].items():
                 log_string += f"""{f'{key}:':>{pad}} {value:.4f}\n"""
 
-        # -- AMP style reward（纯判别器奖励，未与 task reward 混合）
-        if locs["amp_style_steps"] > 0:
-            amp_reward_style = locs["amp_style_sum"] / locs["amp_style_steps"]
-            self.writer.add_scalar("Train/amp_reward_style", amp_reward_style, locs["it"])
-            log_string += f"""{'amp_reward_style:':>{pad}} {amp_reward_style:.4f}\n"""
-
         log_string += ep_string
         log_string += (
             f"""{'-' * width}\n"""
@@ -516,6 +518,7 @@ class AmpOnPolicyRunner:
             "model_state_dict": self.alg.policy.state_dict(),
             "optimizer_state_dict": self.alg.optimizer.state_dict(),
             "discriminator_state_dict": self.alg.discriminator.state_dict(),
+            "discriminator_optimizer_state_dict": self.alg.discriminator_optimizer.state_dict(),
             "amp_normalizer": self.alg.amp_normalizer,
             "iter": self.current_learning_iteration,
             "infos": infos,
@@ -561,6 +564,8 @@ class AmpOnPolicyRunner:
         if load_optimizer and resumed_training:
             # -- algorithm optimizer
             self.alg.optimizer.load_state_dict(loaded_dict["optimizer_state_dict"])
+            if "discriminator_optimizer_state_dict" in loaded_dict:
+                self.alg.discriminator_optimizer.load_state_dict(loaded_dict["discriminator_optimizer_state_dict"])
             # -- RND optimizer if used
             if self.alg.rnd:
                 self.alg.rnd_optimizer.load_state_dict(loaded_dict["rnd_optimizer_state_dict"])

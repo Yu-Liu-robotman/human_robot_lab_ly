@@ -53,7 +53,16 @@ class AMPLoader:
     S_JOINT_POSE_END_IDX = S_JOINT_POSE_START_IDX + S_JOINT_POS_SIZE
     S_JOINT_VEL_START_IDX = S_JOINT_POSE_END_IDX
     S_JOINT_VEL_END_IDX = S_JOINT_VEL_START_IDX + S_JOINT_VEL_SIZE
-    S_END_POS_START_IDX = S_JOINT_VEL_END_IDX
+    S_ROOT_ROT_SIZE = 6
+    S_ROOT_LINVEL_SIZE = 3
+    S_ROOT_ANGVEL_SIZE = 3
+    S_ROOT_ROT_START_IDX = S_JOINT_VEL_END_IDX
+    S_ROOT_ROT_END_IDX = S_ROOT_ROT_START_IDX + S_ROOT_ROT_SIZE
+    S_ROOT_LINVEL_START_IDX = S_ROOT_ROT_END_IDX
+    S_ROOT_LINVEL_END_IDX = S_ROOT_LINVEL_START_IDX + S_ROOT_LINVEL_SIZE
+    S_ROOT_ANGVEL_START_IDX = S_ROOT_LINVEL_END_IDX
+    S_ROOT_ANGVEL_END_IDX = S_ROOT_ANGVEL_START_IDX + S_ROOT_ANGVEL_SIZE
+    S_END_POS_START_IDX = S_ROOT_ANGVEL_END_IDX
     S_END_POS_END_IDX = S_END_POS_START_IDX + S_END_EFFECTOR_POS_SIZE
 
     # 数据集（由 23dof 机器人导出的 txt，BODY_SIZE=23）body 顺序， 4 用工具在tool里知道数据集的body分布，后面会自动用usd顺序自动匹配
@@ -96,6 +105,7 @@ class AMPLoader:
         motion_files=glob.glob("datasets/motion_amp_expert/*"),
         num_frames=2,
         cmd_ranges=None,
+        dynamic_expert_sampling=True,
     ):
         """Expert dataset provides AMP observations from Dog mocap dataset.
 
@@ -107,6 +117,9 @@ class AMPLoader:
         self.num_frames = int(num_frames)
         # label -> list of (vx_range, vy_range, wz_range); user-defined, independent of commands.modes
         self.cmd_ranges = cmd_ranges or {}
+        # True  = 每个 mini-batch 动态随机采 (轨迹, 时刻) 并即时插值出窗口（同 tlibot_legged_lab）
+        # False = 启动时预生成固定窗口池（旧行为：采样 O(1)，但池子固定不变）
+        self.dynamic_expert_sampling = bool(dynamic_expert_sampling)
         if self.num_frames < 2:
             raise ValueError(f"num_frames 至少为 2（当前 {self.num_frames}），否则无法构成时间窗口。")
         all_names_list = list(self.DATASET_BODY_NAMES)   # ← 用数据集自己的顺序，不用机器人 body_names
@@ -297,9 +310,23 @@ class AMPLoader:
                 self._dof_pos_list.append(joint_pos_mujoco[:, AMPLoader.joint_mujoco_select])
                 self._dof_vel_list.append(joint_vel_mujoco[:, AMPLoader.joint_mujoco_select])
 
+                # root 姿态（去 yaw，仅 roll/pitch）与 root 角速度，与 env 侧保持一致
+                _root_quat_w = body_quat_w[:, self.anchor_idx, :]
+                _yaw_quat = math_utils.yaw_quat(_root_quat_w)
+                _root_rotm_local = math_utils.matrix_from_quat(
+                    math_utils.quat_mul(math_utils.quat_conjugate(_yaw_quat), _root_quat_w)
+                )
+                root_rot_tan_norm = torch.cat([_root_rotm_local[:, :, 0], _root_rotm_local[:, :, 2]], dim=-1)
+                root_ang_vel_b = math_utils.quat_apply_inverse(
+                    _root_quat_w, body_ang_vel_w[:, self.anchor_idx, :]
+                )
+
                 motion_data = np.concatenate([
                     joint_pos_mujoco[:, AMPLoader.joint_mujoco_select].cpu().numpy(), # N
                     joint_vel_mujoco[:, AMPLoader.joint_mujoco_select].cpu().numpy(), # N
+                    root_rot_tan_norm.cpu().numpy(),      # 6
+                    select_root_lin_vel_b.cpu().numpy(),  # 3  root 线速度（机身系）：纯 AMP 下唯一的"前进"信号
+                    root_ang_vel_b.cpu().numpy(),         # 3
                     # select_root_ori.cpu().numpy(), # 6
                     # select_root_lin_vel_b.cpu().numpy(), # 3
                     # select_root_ang_vel_b.cpu().numpy(), # 3
@@ -414,9 +441,18 @@ class AMPLoader:
         ).to(self._data_mean_cmd.device)
         print("[AMPLoader] command labels:", self._label_names)
         print("[AMPLoader] label centroids:\n", self.label_centroids)
+        # 扁平帧张量 + 每轨迹起始偏移。必须在 preload 之前建好：preload 也会调用取窗口函数
+        self.all_trajectories_full = torch.vstack(self.trajectories_full)
+        _tl = np.array([t.shape[0] for t in self.trajectories_full], dtype=np.int64)
+        self._cat_offsets_np = np.concatenate([np.zeros(1, dtype=np.int64), np.cumsum(_tl)[:-1]])
         # # Preload transitions.
         self.preload_transitions = preload_transitions
-        if self.preload_transitions:
+        # 动态采样 + 有 label 时，训练走 amp_expert_sample_by_cmd 的即时采样路径，
+        # preloaded_s 完全不会被用到 —— 跳过这 20 万窗口的预生成，省启动时间和显存。
+        self._need_preload_pool = self.preload_transitions and not (
+            self.has_command_labels and self.dynamic_expert_sampling
+        )
+        if self._need_preload_pool:
             print(f"Preloading {num_preload_transitions} transitions")
             traj_idxs = self.weighted_traj_idx_sample_batch(num_preload_transitions)
             times = self.traj_time_sample_batch(traj_idxs)
@@ -426,7 +462,8 @@ class AMPLoader:
             print(f"Finished preloading, preloaded_s shape = {tuple(self.preloaded_s.shape)}")
 
             # 按 label 预加载 expert 窗口池 -> 训练时 O(1) gather（避免每 mini-batch 现算插值）
-            if self.has_command_labels and self.num_labels > 0:
+            # dynamic_expert_sampling=True 时跳过：改为每 mini-batch 动态采样
+            if self.has_command_labels and self.num_labels > 0 and not self.dynamic_expert_sampling:
                 per_label = max(1, num_preload_transitions // self.num_labels)
                 self._label_windows = []
                 for cand in self._label_cand:
@@ -437,7 +474,6 @@ class AMPLoader:
                     )
                 print(f"[AMPLoader] per-label pools: {per_label} windows x {self.num_labels} labels")
 
-        self.all_trajectories_full = torch.vstack(self.trajectories_full)
         self.batch_idx = 0
         self.sc_motion_idx = 0
 
@@ -533,13 +569,39 @@ class AMPLoader:
 
         各帧时刻依次为 times-(N-1)*dt, ..., times-dt, times（由旧到新）。
         num_frames == 2 时结果与旧的 torch.cat([s, s_next], dim=-1) 逐元素相同。
+
+        全向量化：把所有轨迹拼接成一个扁平张量，用 _cat_offsets_np 做全局索引。
+        旧实现逐轨迹循环 + set(traj_idxs)，在 B=2万+ 时会把 12 万个元素转成 Python int，
+        单次 iteration 多花 ~0.5s，这里是主要瓶颈。
         """
-        frames = []
+        traj_idxs = np.asarray(traj_idxs)
+        B = traj_idxs.shape[0]
+        nf = self.trajectory_num_frames[traj_idxs]
+        lens = self.trajectory_lens[traj_idxs]
+        base = self._cat_offsets_np[traj_idxs]
+
+        lo_list, hi_list, bl_list = [], [], []
         for k in range(self.num_frames):
             t_k = times - (self.num_frames - 1 - k) * self.time_between_frames
-            frame = self.get_full_frame_at_time_batch(traj_idxs, t_k)
-            frames.append(frame[:, AMPLoader.S_JOINT_POSE_START_IDX : AMPLoader.S_END_POS_END_IDX])
-        return torch.cat(frames, dim=-1)
+            pos = (t_k / lens) * nf                      # 连续帧坐标 (B,)
+            i0 = np.clip(np.floor(pos), 0, nf - 1).astype(np.int64)
+            i1 = np.clip(i0 + 1, 0, nf - 1).astype(np.int64)
+            lo_list.append(base + i0)
+            hi_list.append(base + i1)
+            bl_list.append(pos - i0)
+
+        # 两次 H2D：索引（int64，lo/hi 拼一起）+ 混合系数（float32）
+        idx = np.concatenate(lo_list + hi_list)                    # (2*num_frames*B,)
+        idx_t = torch.as_tensor(idx, device=self.device)
+        bl_t = torch.as_tensor(
+            np.concatenate(bl_list), device=self.device, dtype=torch.float32
+        ).unsqueeze(-1)                                            # (num_frames*B, 1)
+
+        M = self.num_frames * B
+        a = self.all_trajectories_full.index_select(0, idx_t[:M])
+        c = self.all_trajectories_full.index_select(0, idx_t[M:])
+        out = a * (1.0 - bl_t) + c * bl_t                          # (num_frames*B, frame_dim)
+        return out.reshape(self.num_frames, B, -1).permute(1, 0, 2).reshape(B, -1)
 
     def get_frame(self):
         """Returns random frame."""
@@ -554,7 +616,7 @@ class AMPLoader:
         return self.get_full_frame_at_time(traj_idx, sampled_time)
 
     def get_full_frame_batch(self, num_frames):
-        if self.preload_transitions:
+        if self._need_preload_pool:
             idxs = np.random.choice(self.preloaded_s.shape[0], size=num_frames)
             return self.preloaded_s[idxs]
         else:
@@ -590,7 +652,7 @@ class AMPLoader:
         """
         fd = self.frame_dim
         for _ in range(num_mini_batch):
-            if self.preload_transitions:
+            if self._need_preload_pool:
                 idxs = np.random.choice(self.preloaded_s.shape[0], size=mini_batch_size)
                 window = self.preloaded_s[idxs]
                 s = window[:, :fd]
@@ -612,7 +674,7 @@ class AMPLoader:
         每次产出一个 (mini_batch_size, num_frames * frame_dim) 的扁平窗口张量。
         """
         for _ in range(num_mini_batch):
-            if self.preload_transitions:
+            if self._need_preload_pool:
                 idxs = np.random.choice(self.preloaded_s.shape[0], size=mini_batch_size)
                 window = self.preloaded_s[idxs]
             else:

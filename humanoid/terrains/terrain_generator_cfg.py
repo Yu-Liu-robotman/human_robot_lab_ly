@@ -25,10 +25,10 @@ GRAVEL_TERRAINS_CFG = TerrainGeneratorCfg(
     use_cache=False,
     sub_terrains={
         "flat": terrain_gen.HfRandomUniformTerrainCfg(
-            proportion=0.3, noise_range=(0.0, 0.0), noise_step=0.02, border_width=0.25
+            proportion=1.0, noise_range=(0.0, 0.0), noise_step=0.02, border_width=0.25
         ),
         "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-            proportion=0.7, noise_range=(-0.02, 0.02), noise_step=0.02, border_width=0.25
+            proportion=0.0, noise_range=(-0.02, 0.02), noise_step=0.02, border_width=0.25
         ),
     },
 )

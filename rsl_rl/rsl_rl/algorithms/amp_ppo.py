@@ -29,6 +29,9 @@ from rsl_rl.modules.rnd import RandomNetworkDistillation
 from rsl_rl.storage import ReplayBuffer, RolloutStorage
 from rsl_rl.utils import string_to_callable
 
+DISC_LEARNING_RATE = 2.0e-4
+DISC_MAX_GRAD_NORM = 1.0
+
 
 class AMPPPO:
     """Proximal Policy Optimization algorithm (https://arxiv.org/abs/1707.06347)."""
@@ -133,10 +136,14 @@ class AMPPPO:
         # Create optimizer
         params = [
             {"params": self.policy.parameters(), "name": "policy"},
-            {"params": self.discriminator.trunk.parameters(), "weight_decay": 10e-4, "name": "amp_trunk"},
-            {"params": self.discriminator.amp_linear.parameters(), "weight_decay": 10e-2, "name": "amp_head"},
         ]
         self.optimizer = optim.Adam(params, lr=learning_rate)
+        disc_params = [
+            {"params": self.discriminator.trunk.parameters(), "weight_decay": 1.0e-3, "name": "amp_trunk"},
+            {"params": self.discriminator.amp_linear.parameters(), "weight_decay": 1.0e-2, "name": "amp_head"},
+        ]
+        self.discriminator_optimizer = optim.Adam(disc_params, lr=DISC_LEARNING_RATE)
+        self.disc_max_grad_norm = DISC_MAX_GRAD_NORM
         # Create rollout storage
         self.storage: RolloutStorage = None  # type: ignore
         self.transition = RolloutStorage.Transition()
@@ -465,20 +472,29 @@ class AMPPPO:
                 policy_window = self._split_amp_window(sample_amp_policy)
                 expert_window = self._split_amp_window(sample_amp_expert)
                 with torch.no_grad():
-                    policy_window = self._normalize_amp_window(policy_window)
-                    expert_window = self._normalize_amp_window(expert_window)
-                policy_d = self.discriminator(policy_window.reshape(policy_window.shape[0], -1), label=policy_label)
-                expert_d = self.discriminator(expert_window.reshape(expert_window.shape[0], -1), label=expert_label)
+                    policy_window_normed = self._normalize_amp_window(policy_window)
+                    expert_window_normed = self._normalize_amp_window(expert_window)
+                policy_d = self.discriminator(
+                    policy_window_normed.reshape(policy_window_normed.shape[0], -1), label=policy_label
+                )
+                expert_d = self.discriminator(
+                    expert_window_normed.reshape(expert_window_normed.shape[0], -1), label=expert_label
+                )
                 expert_loss = torch.nn.MSELoss()(expert_d, torch.ones(expert_d.size(), device=self.device))
                 policy_loss = torch.nn.MSELoss()(policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
                 amp_loss = 0.5 * (expert_loss + policy_loss)
-                # 梯度惩罚沿用旧口径：在「未归一化」的原始专家窗口上求梯度（N=2 时与旧的 cat([s, s_next]) 相同）
-                grad_pen_loss = self.discriminator.compute_grad_pen(sample_amp_expert, lambda_=10, label=expert_label)
+                # 与参考一致：梯度惩罚在「归一化后」的专家窗口上求梯度
+                grad_pen_loss = self.discriminator.compute_grad_pen(
+                    expert_window_normed.reshape(expert_window_normed.shape[0], -1),
+                    lambda_=10,
+                    label=expert_label,
+                )
                 loss += self.amploss_coef * amp_loss + self.amploss_coef * grad_pen_loss
 
             # Compute the gradients
             # -- For PPO
             self.optimizer.zero_grad()
+            self.discriminator_optimizer.zero_grad()
             loss.backward()
             # -- For RND
             if self.rnd:
@@ -492,11 +508,14 @@ class AMPPPO:
             # Apply the gradients
             # -- For PPO
             nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+            nn.utils.clip_grad_norm_(self.discriminator.parameters(), self.disc_max_grad_norm)
             self.optimizer.step()
+            self.discriminator_optimizer.step()
             # -- For RND
             if self.rnd_optimizer:
                 self.rnd_optimizer.step()
 
+            # 与参考一致：用「未归一化」的原始窗口更新统计量（policy ∪ expert）
             if self.amp_normalizer is not None and has_expert:
                 self.amp_normalizer.update(policy_window.reshape(-1, self.amp_obs_dim))
                 self.amp_normalizer.update(expert_window.reshape(-1, self.amp_obs_dim))

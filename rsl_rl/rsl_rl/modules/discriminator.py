@@ -57,7 +57,7 @@ class Discriminator(nn.Module):
         curr_in_dim = input_dim + self.num_labels
         for hidden_dim in hidden_layer_sizes:
             amp_layers.append(nn.Linear(curr_in_dim, hidden_dim))
-            amp_layers.append(nn.ReLU())
+            amp_layers.append(nn.LeakyReLU(negative_slope=0.01))
             curr_in_dim = hidden_dim
         self.trunk = nn.Sequential(*amp_layers).to(device)
         self.amp_linear = nn.Linear(hidden_layer_sizes[-1], 1).to(device)

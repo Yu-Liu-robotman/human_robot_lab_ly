@@ -51,6 +51,11 @@ class ReplayBuffer:
         """
 
         num_states = states.shape[0]
+        if num_states > self.buffer_size:
+            raise ValueError(
+                f"insert 的样本数 {num_states} 超过 buffer_size {self.buffer_size}；"
+                "buffer_size 必须不少于、且最好为每次插入样本数（通常为 num_envs）的整数倍。"
+            )
         start_idx = self.step
         end_idx = self.step + num_states
         if end_idx > self.buffer_size:

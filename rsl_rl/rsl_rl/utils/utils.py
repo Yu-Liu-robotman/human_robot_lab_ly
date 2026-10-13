@@ -278,6 +278,7 @@ class Normalizer(RunningMeanStd):
         epsilon=1e-4,
         clip_obs=10.0,
         device="cuda",
+        min_std=0.0,
     ):
         super().__init__(
             shape=input_dim,
@@ -287,16 +288,30 @@ class Normalizer(RunningMeanStd):
 
         self.epsilon = epsilon
         self.clip_obs = clip_obs
+        # 逐维标准差下限：专家数据里恒定的维度（如 torso 3 关节的 pos/vel，std≈0）在归一化时
+        # 会被放大到 ±clip_obs 饱和，判别器只要看这些维度就能「一有偏差就判假」，成为作弊捷径。
+        # 传标量（对所有维度生效）或长度 = input_dim 的序列。
+        self.min_std = torch.as_tensor(min_std, dtype=torch.float32, device=device).reshape(-1)
+
+    def _std(self):
+        """有效标准差：sqrt(var + eps)，并对小于下限的维度做钳制。"""
+        std = torch.sqrt(self.var + self.epsilon)
+        ms = self.min_std
+        if ms.numel() == 1:
+            if float(ms) > 0.0:
+                std = std.clamp(min=float(ms))
+        elif ms.numel() == std.numel():
+            std = torch.maximum(std, ms)
+        return std
 
     def normalize(self, x , device=None):
 
         if isinstance(x, np.ndarray):
             mean = self.mean.cpu().numpy()
-            var = self.var.cpu().numpy()
+            std = self._std().cpu().numpy()
 
             return np.clip(
-                (x - mean)
-                / np.sqrt(var + self.epsilon),
+                (x - mean) / std,
                 -self.clip_obs,
                 self.clip_obs,
             )
@@ -307,7 +322,7 @@ class Normalizer(RunningMeanStd):
 
         return torch.clamp(
             (x - self.mean)
-            / torch.sqrt(self.var + self.epsilon),
+            / self._std(),
             -self.clip_obs,
             self.clip_obs,
         )
