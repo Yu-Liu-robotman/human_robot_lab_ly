@@ -7,11 +7,7 @@ import yaml
 
 ENV_CFG_FILENAME = '01_env_cfg.yaml'
 TRAIN_CFG_FILENAME = '01_train_cfg.yaml'
-TRAINCOPY_ASSET_FILENAME = '01_urdf.urdf'
-TRAINCOPY_MJCF_FILENAME = '01_mjcf.xml'
-TRAINCOPY_SIM2SIMCFG_FILENAME = '01_sim2sim_cfg.yaml'
 SIM2SIMCFG_FILENAME = 'sim2sim_cfg.yaml'
-TRAINCOPY_ASSET_DIR = 'train_asset'
 
 
 def class_to_dict(obj) -> dict:
@@ -62,28 +58,3 @@ def update_class_from_yaml_file(obj, filename):
     with open(filename, 'r') as yaml_file:
         data = yaml.load(yaml_file, Loader=yaml.FullLoader)
         update_class_from_dict(obj, data)
-
-
-def get_asset_path_train_backup(src_asset_file):
-    asset_common_path = os.path.dirname(os.path.dirname(src_asset_file))
-    target_path = os.path.join(asset_common_path, TRAINCOPY_ASSET_DIR)
-    return target_path
-
-
-def get_mjcf_filename_train_backup(src_asset_file, load_run : str):
-    """Get the filename of mjcf to backup, when training.
-
-    Args:
-        src_asset_file (_type_): path for urdf
-        load_run (str): name of the load_run
-
-    Returns:
-        _type_: _description_
-    """
-    target_path = get_asset_path_train_backup(src_asset_file)
-    if not os.path.exists(target_path):
-        os.makedirs(target_path)
-    filename = os.path.basename(src_asset_file)
-    name, ext = os.path.splitext(filename)
-    dist_mjcf_file = os.path.join(target_path, f'{name}_{load_run}.xml')
-    return dist_mjcf_file

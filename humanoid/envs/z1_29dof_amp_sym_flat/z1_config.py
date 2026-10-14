@@ -58,21 +58,29 @@ COMMAND_THRESHOLD = 0.1
 
 @configclass
 class Z129DOFRewardCfg(RewardCfg):
+    # Base Code Reward *
     track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=1.5, params={"std": 0.35}) # 3.0
-    # track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=1.5, params={"std": 0.25})   # 3.0
-    # -- penalties
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=1.0, params={"std": 0.25})   # 3.0
     flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-1.0)   # -2.0 -> -4.0：10° 俯仰才 0.12/s，原来是 0.06/s
     lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-0.4)
     ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.2)
     dof_torques_l2 = RewTerm(func=mdp.applied_torque_limits, weight=-0.01)
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.0e-7)
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.005)
-    # 只约束 12 个腿关节：上半身 17 关节策略不控，被负载压到软限位不该被重罚
-    dof_pos_limits = RewTerm(
-        func=mdp.joint_pos_limits,
-        weight=-10.0,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["leg_.*_joint", "torso_.*_joint"])},
+    dof_pos_limits = RewTerm(func=mdp.joint_pos_limits,weight=-10.0,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["leg_.*_joint", "torso_.*_joint"])})
+    termination_penalty = RewTerm(func=mdp.is_terminated, weight=-50.0)
+    feet_not_lifted_when_commanded = RewTerm(
+        func=z1_mdp.feet_not_lifted_when_commanded,
+        weight=-2.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+            "command_threshold": COMMAND_THRESHOLD,
+            "min_contact_time": 0.015,
+        }
     )
+    # -------------------
+
     # energy = RewTerm(func=mdp.energy, weight=-1e-3)
     body_orientation_l2 = RewTerm(func=mdp.body_orientation_l2, weight=-3.0,
         params={
@@ -85,7 +93,7 @@ class Z129DOFRewardCfg(RewardCfg):
     # )
     # feet_air_time = RewTerm(
     #     func=mdp.feet_air_time_positive_biped,
-    #     weight=1.0,
+    #     weight=0.25,
     #     params={
     #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
     #         "threshold": 0.4,
@@ -100,19 +108,20 @@ class Z129DOFRewardCfg(RewardCfg):
     #     },
     # )
     # dont_vel_tabu = RewTerm(func=mdp.dont_vel_tabu, weight=-1.0)
-    termination_penalty = RewTerm(func=mdp.is_terminated, weight=-50.0)
+
     # ankle_torque = RewTerm(func=mdp.ankle_torque, weight=-0.0001)
     # add* 站立姿态优化 X
-    # stand_still_joint_deviation_l1 = RewTerm(
-    #     func=mdp.leglab_stand_still_joint_deviation_l1,
-    #     weight=-1.0,
-    #     params={
-    #         "command_threshold": COMMAND_THRESHOLD,
-    #         "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
-    #         "stand_cmd": True,
-    #     },
-    # )
- 
+    stand_still_joint_deviation_l1 = RewTerm(
+        func=mdp.leglab_stand_still_joint_deviation_l1,
+        weight=-0.15,
+        params={
+            "command_threshold": COMMAND_THRESHOLD,
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
+            "stand_cmd": True,
+        },
+    )
+     # add*
+
 @configclass
 class Z129DOFTerminationCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
@@ -186,8 +195,8 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         # (name, weight, lin_vel_x, lin_vel_y, ang_vel_z)
         self.commands.modes = [
             CommandModeCfg(name="stand", weight=0.20, lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
-            # CommandModeCfg(name="forward", weight=0.50, lin_vel_x=(COMMAND_THRESHOLD, WALK_VX), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
-            CommandModeCfg(name="backward", weight=0.80, lin_vel_x=(WALK_VX_BACK, -COMMAND_THRESHOLD), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
+            CommandModeCfg(name="forward", weight=0.40, lin_vel_x=(COMMAND_THRESHOLD, WALK_VX), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
+            CommandModeCfg(name="backward", weight=0.40, lin_vel_x=(WALK_VX_BACK, -COMMAND_THRESHOLD), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
             # CommandModeCfg(name="side_left", weight=0.05, lin_vel_x=(0.0, 0.0), lin_vel_y=(COMMAND_THRESHOLD, WALK_VY), ang_vel_z=(0.0, 0.0)),
             # CommandModeCfg(name="side_right", weight=0.05, lin_vel_x=(0.0, 0.0), lin_vel_y=(-WALK_VY, -COMMAND_THRESHOLD), ang_vel_z=(0.0, 0.0)),
             # CommandModeCfg(name="turn_left", weight=0.05, lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(COMMAND_THRESHOLD, WALK_WZ)),
@@ -303,15 +312,15 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
     load_checkpoint = "model_.*.pt"
 
     # amp parameter
-    amp_reward_coef = 0.02 * 10
+    amp_reward_coef = 0.02 * 15
     amp_task_reward_lerp = 0.5
 
     amp_motion_files = [
             # 前进 vx > 0
-            # ("fwalk_f", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_2935-3005.txt"),
-            # ("fwalk_f", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_1_5_segment_0403-0452.txt"),
-            # ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_0122-0268.txt"),
-            # ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_0478-0608.txt"),
+            ("fwalk_f", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_2935-3005.txt"),
+            ("fwalk_f", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_1_5_segment_0403-0452.txt"),
+            ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_0122-0268.txt"),
+            ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_0478-0608.txt"),
             # 后退 vx < 0
             ("bwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/t2pro_walk_0601_new_backward.txt"),
 
@@ -323,15 +332,18 @@ class Z129DOFAmpFlatAgentCfg(RslRlOnPolicyRunnerCfg):
             # ("turn", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_turn_left_segment_3649-3922.txt"),
             # ("turn", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_turn_right_segment_3176-3449.txt"),
 
+            # 
+            # ("stand","humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/t2pro_stand11-0511.txt")
     ]
-    amp_num_preload_transitions = 200000
+    amp_num_preload_transitions = 5000
     # 每个 mini-batch 动态随机采参考窗口
     amp_dynamic_expert_sampling = True
     amp_num_frames = 5
     # label -> [(vx_range, vy_range, wz_range), ...]；必须排除 0，否则 stand/walk_turn 会被误匹配
     amp_motion_cmd_ranges = {
-        # "fwalk": [((0.1, 1.0), (0.0, 0.0), (0.0, 0.0))],
-        # "fwalk_f": [((1.0, 1.6), (0.0, 0.0), (0.0, 0.0))],
+        # "stand": [((0.0, 0.0), (0.0, 0.0), (0.0, 0.0))],
+        "fwalk": [((0.1, 1.0), (0.0, 0.0), (0.0, 0.0))],
+        "fwalk_f": [((1.0, 1.6), (0.0, 0.0), (0.0, 0.0))],
         "bwalk": [((-1.0, -0.1), (0.0, 0.0), (0.0, 0.0))],
         # "turn": [((0.0, 0.0), (0.0, 0.0), (0.1, WALK_WZ)), ((0.0, 0.0), (0.0, 0.0), (-WALK_WZ, -0.1))],
     }

@@ -2,4 +2,3 @@ logs
 __pycache__/
 *.pyc
 *.egg-info
-humanoid/assets/z1/train_asset

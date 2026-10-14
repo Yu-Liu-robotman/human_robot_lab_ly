@@ -5,9 +5,7 @@
     policy.pt          TorchScript
     policy.onnx        ONNX
     params.yaml        部署侧需要的网络/观测参数
-    sim2sim_cfg.yaml   sim2sim 配置（指向上面三个）
-
-同时还把 MJCF 备份到 ``humanoid/assets/<robot>/train_asset/<robot>_<run>.xml``。
+    sim2sim_cfg.yaml   sim2sim 配置（mjcf_path 直接指向 humanoid/assets/<robot>/mjcf/ 下的真文件）
 
 两个入口：
     export_all(env, runner)          —— 直接导出一次（play.py 用）
@@ -23,7 +21,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import yaml
 from datetime import datetime
 
@@ -139,36 +136,21 @@ def export_policy_param_file(env, filepath):
     return yaml_path
 
 
-def export_sim2simconfig(model_path, export_path, mjcf_path=None):
-    """从「训练时备份的 01_sim2sim_cfg.yaml」生成部署用的 sim2sim_cfg.yaml。
+def export_sim2simconfig(export_path, mjcf_path=None):
+    """生成部署用的 sim2sim_cfg.yaml。
 
-    ``mjcf_path`` 为空时保留源文件里已有的值（不覆盖）。
+    ``mjcf_path`` 直接指向 ``humanoid/assets/<robot>/mjcf/`` 下的真实 MJCF，
+    不再往 ``train_asset/`` 拷副本。
     """
     dist_file = os.path.join(export_path, tool_util.SIM2SIMCFG_FILENAME)
     import humanoid.config.sim2sim_config as sim2simcfg
     cfg = sim2simcfg.Sim2simCfg()
-    tool_util.update_class_from_yaml_file(cfg, model_path)
     if mjcf_path:
         cfg.sim_config.mjcf_path = mjcf_path
     cfg.sim_config.model_path = f"{export_path}/policy.pt"
     cfg.sim_config.param_path = f"{export_path}/params.yaml"
     tool_util.save_class_to_yaml_file(cfg, dist_file)
     return dist_file
-
-
-def export_assets(src_asset_file, model_mjcf_file, load_run):
-    """把 MJCF 备份到 ``<robot>/train_asset/<name>_<load_run>.xml``。
-
-    注意 ``src_asset_file`` 只用来推导「目标路径与文件名」，不必真实存在；
-    真正被拷贝的是 ``model_mjcf_file``。
-    """
-    dist_mjcf_file = tool_util.get_mjcf_filename_train_backup(src_asset_file, load_run)
-    if model_mjcf_file and os.path.exists(model_mjcf_file):
-        shutil.copy2(model_mjcf_file, dist_mjcf_file)
-        print(f'copy: {model_mjcf_file}->{dist_mjcf_file}')
-    else:
-        print(f'[WARN] MJCF 源文件不存在，跳过备份：{model_mjcf_file}')
-    return dist_mjcf_file
 
 
 def resolve_mjcf_source(experiment_name: str):
@@ -221,7 +203,7 @@ def export_all(
         export_dir: 输出目录，默认 ``<log_dir>/exported``。
         log_dir: 本次 run 的目录，默认取 ``runner.log_dir``。
         export_onnx: 是否同时导出 ONNX（比 JIT 慢一些）。
-        copy_mjcf: 是否备份 MJCF 并生成 sim2sim_cfg.yaml。
+        copy_mjcf: 是否生成 sim2sim_cfg.yaml（mjcf_path 直接指向真 mjcf，不再拷贝）。
 
     Returns:
         输出目录路径。
@@ -248,27 +230,16 @@ def export_all(
     if verbose:
         print('Exported policy param to: ', param_file)
 
-    # ---- 3) MJCF 备份 + sim2sim_cfg.yaml ----
+    # ---- 3) sim2sim_cfg.yaml（mjcf_path 直接指向真 mjcf，不再拷 train_asset 副本）----
     if copy_mjcf:
         exp_name = getattr(getattr(env, "cfg", None), "experiment_name", "") or ""
-        robot = exp_name.split("_")[0]
-        # 只用于推导目标路径/文件名（保持与 play.py 一致的 z1_<run>.xml 命名）
-        src_asset_file = os.path.join(
-            HUMANOID_LAB_ROOT_DIR, "humanoid", "assets", robot, "mjcf", f"{robot}.xml"
-        )
-        mjcf_src = resolve_mjcf_source(exp_name)
-        mjcf_file = export_assets(src_asset_file, mjcf_src, os.path.basename(log_dir))
+        mjcf_file = resolve_mjcf_source(exp_name)
+        if mjcf_file is None:
+            print(f"[WARN] 未能推断 {exp_name} 的 MJCF 文件，sim2sim_cfg.yaml 的 mjcf_path 将为空")
+        simcfg_file = export_sim2simconfig(export_dir, mjcf_path=mjcf_file)
         if verbose:
-            print('Exported mjcf file to: ', mjcf_file)
-
-        # train.py 在 learn() 之前会写这个「训练时备份」文件
-        train_copy_cfg = os.path.join(log_dir, tool_util.TRAINCOPY_SIM2SIMCFG_FILENAME)
-        if os.path.exists(train_copy_cfg):
-            simcfg_file = export_sim2simconfig(train_copy_cfg, export_dir, mjcf_file)
-            if verbose:
-                print('Exported sim2sim config file to: ', simcfg_file)
-        else:
-            print(f'[WARN] 找不到 {train_copy_cfg}，跳过 sim2sim_cfg.yaml 导出')
+            print('mjcf_path ->', mjcf_file)
+            print('Exported sim2sim config file to: ', simcfg_file)
 
     return export_dir
 

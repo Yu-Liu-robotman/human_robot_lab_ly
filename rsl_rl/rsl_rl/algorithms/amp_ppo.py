@@ -29,7 +29,7 @@ from rsl_rl.modules.rnd import RandomNetworkDistillation
 from rsl_rl.storage import ReplayBuffer, RolloutStorage
 from rsl_rl.utils import string_to_callable
 
-DISC_LEARNING_RATE = 2.0e-4
+DISC_LEARNING_RATE = 2.0e-4 
 DISC_MAX_GRAD_NORM = 1.0
 
 

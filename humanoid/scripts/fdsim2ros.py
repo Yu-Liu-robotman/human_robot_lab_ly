@@ -843,7 +843,19 @@ if __name__ == '__main__':
         if args.load_model is not None and args.model_param is not None:
             cfg.sim_config.model_path = args.load_model
             cfg.sim_config.param_path = args.model_param
+    if not os.path.exists(cfg.sim_config.mjcf_path):
+        from humanoid.utils.export_utils import resolve_mjcf_source
 
+        _fallback = resolve_mjcf_source(experiment_name)
+        if _fallback is not None:
+            print(f"[WARN] mjcf_path 不存在：{cfg.sim_config.mjcf_path}\n"
+                  f"       -> 已改用 {_fallback}")
+            cfg.sim_config.mjcf_path = _fallback
+        else:
+            raise FileNotFoundError(
+                f"mjcf 不存在且无法按 experiment_name='{experiment_name}' 推断："
+                f"{cfg.sim_config.mjcf_path}"
+            )
     listener = keyboard.Listener(on_press=on_key_press)
     listener.start()
 

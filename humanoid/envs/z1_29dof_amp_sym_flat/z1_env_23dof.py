@@ -936,7 +936,7 @@ class Z1AmpSymEnv29DOF(BaseEnv):
             self.robot.data.root_quat_w,
             self.robot.data.root_lin_vel_w,
         )
-
+    
         root_ang_vel_b = math_utils.quat_apply_inverse(
             self.robot.data.root_quat_w,
             self.robot.data.root_ang_vel_w,

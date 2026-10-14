@@ -1,8 +1,6 @@
  
 
 import argparse
-import shutil
-import yaml
 from isaaclab.app import AppLauncher
 from rsl_rl.runners import OnPolicyRunner, AmpOnPolicyRunner, DreamWaQAmpOnPolicyRunner
 
@@ -11,16 +9,7 @@ from humanoid.utils import task_registry
 # local imports
 import humanoid.utils.cli_args as cli_args  # isort: skip
 
-import humanoid.tools.common as tool_util
-
-from humanoid import HUMANOID_LAB_ROOT_DIR
-from humanoid.utils.export_utils import enable_auto_export, resolve_mjcf_source
-
-def save_sim2sim_cfg(log_dir, mjcf_file):
-    import humanoid.config.sim2sim_config as sim2simcfg
-    cfg = sim2simcfg.Sim2simCfg()
-    cfg.sim_config.mjcf_path = mjcf_file
-    tool_util.save_class_to_yaml_file(cfg, os.path.join(log_dir, tool_util.TRAINCOPY_SIM2SIMCFG_FILENAME))
+from humanoid.utils.export_utils import enable_auto_export
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
@@ -97,14 +86,9 @@ def train():
 
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
-    # 原来这里硬编码了 t2pro 目录，z1 任务会得到一个不存在的路径
-    mjcf_file = resolve_mjcf_source(agent_cfg.experiment_name)
-    if mjcf_file is None:
-        print(f"[WARN] 未能推断 {agent_cfg.experiment_name} 的 MJCF 文件，sim2sim 的模型路径可能不对")
-        mjcf_file = ""
-    save_sim2sim_cfg(runner.log_dir, mjcf_file)
 
     # 每 save_interval（以及训练结束时）自动刷新 <log_dir>/exported/
+    # sim2sim_cfg.yaml 的 mjcf_path 由 export_all 直接指向 assets/<robot>/mjcf/ 下的真文件
     enable_auto_export(runner, env)
 
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
