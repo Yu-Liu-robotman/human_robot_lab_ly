@@ -12,7 +12,18 @@ python3 humanoid/scripts/fdsim2ros.py --experiment_name z1_29dof_15amp_sym_flat 
 
 # 只压质量、不甩手（隔离「负重」这一个变量）
 python3 humanoid/scripts/fdsim2ros.py --experiment_name z1_29dof_amp_sym_flat --ub_payload 0.3
+
+# 录成 23dof（列格式与 t2pro_stand11-0511.csv 一致）：
+#   跑起来后 按【空格】开始录 -> 再按【空格】结束并立即存成 time1.csv
+#   再按【空格】->【空格】存成 time2.csv，以此类推
+python humanoid/scripts/fdsim2ros.py \
+  --experiment_name z1_29dof_amp_sym_flat \
+  --load_run 2026-09-28_09-52-41 \
+  --record humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/gmr/csv4 \
+  --record_robot z123dof --record_fps 50 --record_delay 2.0
+
 """
+import ast
 import math
 import os
 print(os.getenv('PYTHONPATH'))
@@ -70,16 +81,23 @@ class cmd:
     dyaw = 0.0
 
 stand_flag = 1
+record_flag = False   # 录制开关（空格键切换）
 def on_key_press(key):
     """Get key press."""
     try:
-        # print(key)
-        ch = key.char.lower()
-        if ch not in '0123456789f':
+        # 空格：pynput 在不同后端下可能是 Key.space 或 KeyCode(char=' ')，两个都接
+        if key == keyboard.Key.space or getattr(key, 'char', None) == ' ':
+            global record_flag
+            record_flag = not record_flag
+            print(f"[RECORD] {'▶ 开始录制' if record_flag else '■ 结束录制（正在保存…）'}", flush=True)
             return
-        keyboard_control(ch)
-    except AttributeError:
-        pass
+        ch = getattr(key, 'char', None) or ''
+        if len(ch) != 1 or ch.lower() not in '0123456789f':
+            return
+        keyboard_control(ch.lower())
+    except Exception as e:   # noqa: BLE001
+        # 原来只 except AttributeError，其它异常会被静默吞掉
+        print(f'[KEY] 处理按键出错: {type(e).__name__}: {e}', flush=True)
 
 def keyboard_control(key):
     """."""
@@ -118,6 +136,29 @@ def keyboard_control(key):
         global stand_flag
         stand_flag *= -1
     print(cmd.vx, cmd.vy, cmd.dyaw)
+
+
+def load_joint_sdk_names(robot_key):
+    """取资产里的 joint_sdk_names（就是 csv 的 dof 列顺序）。失败返回 None。
+
+    用 ast 直接抠字面量，**不 import 资产模块** —— fdsim2ros 没启 Isaac app，
+    import humanoid.assets.z1.z1 会连带 import isaaclab/omni 而失败。
+    """
+    rel = {'z1': 'assets/z1/z1.py', 'z123dof': 'assets/z1/z1.py',
+           'z120dof': 'assets/z1/z1_20dof.py', 'z129dof': 'assets/z1/z1_29dof.py'}.get(robot_key)
+    if rel is None:
+        return None
+    path = os.path.join(workspace_dir, 'humanoid', rel)
+    try:
+        with open(path) as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.keyword) and node.arg == 'joint_sdk_names':
+                return list(ast.literal_eval(node.value))
+        print(f'[WARN] {path} 里没找到 joint_sdk_names')
+    except Exception as e:  # noqa: BLE001
+        print(f'[WARN] 解析 {path} 的 joint_sdk_names 失败: {e}')
+    return None
 
 
 def quaternion_to_euler_array(quat):
@@ -187,6 +228,14 @@ class HumaRobotSimRos(Node):
         self.ub_theta = 1.5
         self.ub_payload = 0.0
 
+        # 录制（csv4 格式，由 __main__ 用命令行覆盖）
+        self.record_path = None
+        self.record_robot = None
+        self.record_prefix = None
+        self.record_fps = 50.0
+        self.record_delay = 0.0
+        self.record_duration = 0.0
+
     def get_obs(self, data):
         """Extracts an observation from the mujoco data structure."""
         q = data.qpos.astype(np.double)
@@ -238,6 +287,39 @@ class HumaRobotSimRos(Node):
 
         return indices if j == len(sub_list) else []
 
+    def _resolve_record_columns(self, joint_names, name_map, param, robot_key):
+        """返回 (列名, mjcf 关节下标)。列顺序 = 目标资产 joint_sdk_names。"""
+        sdk = load_joint_sdk_names(robot_key) if robot_key else None
+        if sdk is None:
+            exp = str(param.get('exp_name', ''))
+            key = None
+            for tag, k in (('20dof', 'z120dof'), ('23dof', 'z123dof'), ('29dof', 'z129dof')):
+                if tag in exp:
+                    key = k
+                    break
+            if key:
+                sdk = load_joint_sdk_names(key)
+                print(f"[RECORD] 由 exp_name='{exp}' 推断关节表: {key}")
+
+        mjcf_to_sdk = {nm: name_map.get(nm, nm) for nm in joint_names}
+        if sdk is None:
+            print('[WARN] 无法确定目标关节表，按 mjcf 自身关节顺序录制')
+            return list(joint_names), list(range(len(joint_names)))
+
+        name2idx = {mjcf_to_sdk[nm]: k for k, nm in enumerate(joint_names)}
+        cols, names, dropped = [], [], []
+        for nm in sdk:
+            if nm in name2idx:
+                cols.append(name2idx[nm])
+                names.append(nm)
+            else:
+                dropped.append(nm)
+        if dropped:
+            print(f'[WARN] 这些关节在 mjcf 里找不到，已跳过（共 {len(dropped)}）: {dropped}')
+        if not cols:
+            raise ValueError('录制列映射为空：mjcf 关节名与 joint_sdk_names 完全对不上')
+        return names, cols
+
     @time_decorator
     def run_mujoco(self, policy, param, cfg):
         """Run the Mujoco simulation using the provided policy and configuration.
@@ -251,6 +333,7 @@ class HumaRobotSimRos(Node):
         """
         self.param = param
         self.policy = policy
+        global record_flag
 
         model = mujoco.MjModel.from_xml_path(cfg.sim_config.mjcf_path)
         model.opt.timestep = cfg.sim_config.dt
@@ -398,6 +481,61 @@ class HumaRobotSimRos(Node):
         print(f"受控 {len(dof_names)} 个: {dof_names}")
         print(f"锁死 {len(locked)} 个: {locked}")
 
+        # ------------------------------------------------------------------
+        # 录制：列格式 == datasets/23dof/gmr/csv4/*.csv
+        #   root_pos(3) + root_rot(xyzw, 4) + dof_pos(N)，无表头
+        #   dof 列顺序 = 目标资产 joint_sdk_names（默认按 exp_name 推断）
+        # 分段：按【空格】开始一段；再按【空格】结束并立即另存为一个文件
+        #       第 k 段 -> {prefix}k.csv（默认 prefix="time" -> time1.csv, time2.csv...）
+        # ------------------------------------------------------------------
+        qpos_adr = np.array([model.jnt_qposadr[i] for i in range(1, model.njnt)], dtype=np.int64)
+        rec_cols, rec_names = None, None
+        rec_dir, rec_prefix = None, 'time'
+        rec_rows = []
+        rec_dt = 1.0 / max(self.record_fps, 1e-6)
+        rec_next_t = 0.0
+        rec_seg_end = float('inf')
+        rec_prev_flag = False
+        rec_saved = 0
+
+        def rec_save():
+            """把当前片段立即落盘（文件名自动避开已存在的）。返回保存路径或 None。"""
+            nonlocal rec_rows, rec_saved
+            if not rec_rows:
+                print('[RECORD] 本段没有录到帧，忽略')
+                return None
+            out = np.asarray(rec_rows, dtype=np.float64)
+            n = rec_saved + 1
+            while os.path.exists(os.path.join(rec_dir, f'{rec_prefix}{n}.csv')):
+                n += 1
+            path = os.path.join(rec_dir, f'{rec_prefix}{n}.csv')
+            np.savetxt(path, out, delimiter=',', fmt='%.17g')
+            print(f'[RECORD] 已保存 {out.shape[0]} 帧 × {out.shape[1]} 列 -> {path}')
+            rec_saved = n
+            rec_rows = []
+            return path
+
+        if self.record_path:
+            rec_names, rec_cols = self._resolve_record_columns(joint_names, name_map, param, self.record_robot)
+            rec_cols = np.asarray(rec_cols, dtype=np.int64)
+            p = os.path.expanduser(self.record_path)
+            is_csv = p.lower().endswith('.csv')
+            if self.record_prefix:
+                rec_prefix = str(self.record_prefix)
+            else:
+                rec_prefix = os.path.splitext(os.path.basename(p))[0] if is_csv else 'time'
+            rec_dir = os.path.dirname(os.path.abspath(p)) if is_csv else os.path.abspath(p)
+            os.makedirs(rec_dir, exist_ok=True)
+            print(f'[RECORD] 目录 -> {rec_dir}')
+            print(f'[RECORD] 列 = root_pos(3) + root_rot(xyzw,4) + dof({len(rec_cols)})，无表头，fps={self.record_fps}')
+            print(f'[RECORD] dof 列顺序 = {rec_names}')
+            print('[RECORD] 按【空格】开始录制；再按【空格】结束并立即保存为一个文件')
+            print(f'[RECORD] 分段命名：{os.path.join(rec_dir, rec_prefix + "1.csv")}, {rec_prefix}2.csv, ...')
+            if self.record_delay:
+                print(f'[RECORD] 每段开始后忽略前 {self.record_delay:g}s')
+            if self.record_duration and self.record_duration > 0:
+                print(f'[RECORD] 每段最长 {self.record_duration:g}s，到点自动结束并保存')
+
         # ---- 上半身随机扰动：复刻训练里的 OU 过程（默认关，锁死在 INIT_DEFAULT）----
         UB_AMP = {"shoulder_pitch": 1.00, "shoulder_roll": 0.45, "shoulder_yaw": 0.35,
                   "elbow": 0.70, "wrist_roll": 0.30, "wrist_pitch": 0.30, "wrist_yaw": 0.30}
@@ -486,6 +624,32 @@ class HumaRobotSimRos(Node):
                 mujoco.mj_step(model, data)
                 ref_time += model.opt.timestep
 
+                # ---- 录制：空格 开始 / 空格 结束（结束时立即另存为一个文件）----
+                if rec_cols is not None:
+                    t_sim = count_lowlevel * model.opt.timestep
+                    if record_flag != rec_prev_flag:
+                        if record_flag:                    # ▶ 开始新的一段
+                            rec_rows = []
+                            rec_next_t = t_sim + float(self.record_delay)
+                            rec_seg_end = (t_sim + float(self.record_duration)
+                                           if self.record_duration and self.record_duration > 0
+                                           else float('inf'))
+                            print(f'[RECORD] ▶ 开始录制 (t={t_sim:.2f}s, 忽略前 {self.record_delay:g}s)')
+                        else:                              # ■ 结束并立即保存
+                            rec_save()
+                        rec_prev_flag = record_flag
+
+                    if record_flag and rec_next_t <= t_sim <= rec_seg_end:
+                        qj = data.qpos[qpos_adr]   # 与 joint_names 同序：第 k 项 = joint_names[k]
+                        # MuJoCo qpos 的四元数是 wxyz，csv 要 xyzw
+                        rec_rows.append(np.concatenate(
+                            [data.qpos[0:3], data.qpos[3:7][[1, 2, 3, 0]], qj[rec_cols]]
+                        ))
+                        rec_next_t = t_sim + rec_dt
+                    elif record_flag and t_sim > rec_seg_end:   # 达到 --record_duration，自动收尾
+                        print(f'[RECORD] 本段已达 {self.record_duration:g}s，自动结束并保存')
+                        record_flag = False
+
                 if count_lowlevel % cfg.sim_config.decimation == 0:
                     # 状态发布
                     now_time = time.time()
@@ -516,6 +680,12 @@ class HumaRobotSimRos(Node):
 
                 count_lowlevel += 1
             pass
+
+        # ---- 录制落盘：退出时把还开着的最后一段也存下来 ----
+        if rec_cols is not None and rec_rows:
+            print('[RECORD] 退出前保存尚未结束的片段')
+            rec_save()
+
         viewer.close()
 
     def euler_apply_inverse(self, eu_ang: np.ndarray, v: np.ndarray) -> np.ndarray:
@@ -791,6 +961,17 @@ if __name__ == '__main__':
     parser.add_argument('--ub_amp', type=float, default=1.0, help='扰动幅值倍数：1.0 = 训练表')
     parser.add_argument('--ub_theta', type=float, default=1.5, help='OU 回归强度：训练=1.5，越小越飘')
     parser.add_argument('--ub_payload', type=float, default=0.0, help='每根手臂连杆随机加质量上限(kg)，0=关')
+    parser.add_argument('--record', type=str, default=None,
+                        help='录制目录（或 .csv 路径，取其所在目录）。格式同 datasets/.../gmr/csv4/*.csv：'
+                             '无表头，root_pos(3)+root_rot xyzw(4)+dof(N)。跑起来后按【空格】开始/结束，'
+                             '每次结束立即另存为一个文件')
+    parser.add_argument('--record_robot', type=str, default=None,
+                        help='录制用的关节顺序来源：z1|z123dof|z120dof|z129dof；默认由 params.yaml 的 exp_name 推断')
+    parser.add_argument('--record_prefix', type=str, default=None,
+                        help="分段文件名前缀，默认 'time'（--record 给的是 .csv 时用其文件名）")
+    parser.add_argument('--record_fps', type=float, default=50.0, help='录制频率 Hz，默认 50（= 控制频率）')
+    parser.add_argument('--record_delay', type=float, default=0.0, help='每段开始后忽略前 N 秒，默认 0')
+    parser.add_argument('--record_duration', type=float, default=0.0, help='每段最长 N 秒，0=不限（到点自动结束并保存）')
 
     args = parser.parse_args()
 
@@ -856,8 +1037,15 @@ if __name__ == '__main__':
                 f"mjcf 不存在且无法按 experiment_name='{experiment_name}' 推断："
                 f"{cfg.sim_config.mjcf_path}"
             )
-    listener = keyboard.Listener(on_press=on_key_press)
-    listener.start()
+    try:
+        listener = keyboard.Listener(on_press=on_key_press)
+        listener.start()
+        print('[KEY] 键盘监听已启动（空格=录制开/停, 0/2/4/6/7/8/9=指令, f=站立切换）', flush=True)
+    except Exception as e:  # noqa: BLE001
+        listener = None
+        print(f'[KEY][WARN] 键盘监听启动失败：{type(e).__name__}: {e}\n'
+              '            → 空格和数字键都不会生效。请确认 DISPLAY 可用；\n'
+              '              Wayland 原生会话下 pynput 无法全局抓键，需 X11/XWayland。', flush=True)
 
     policy = torch.jit.load(cfg.sim_config.model_path)
     with open(cfg.sim_config.param_path, 'r') as yaml_file:
@@ -868,6 +1056,16 @@ if __name__ == '__main__':
     node.ub_amp = args.ub_amp
     node.ub_theta = args.ub_theta
     node.ub_payload = args.ub_payload
+    node.record_path = args.record
+    node.record_robot = args.record_robot
+    node.record_fps = args.record_fps
+    node.record_delay = args.record_delay
+    node.record_duration = args.record_duration
+    node.record_prefix = args.record_prefix
+    if args.record:
+        print('[RECORD] 已就绪：按【空格】开始录制，再按【空格】结束并保存')
+    else:
+        print('[RECORD] 未启用录制（没给 --record）——按【空格】不会有任何效果')
     node.run_mujoco(policy, param, cfg)
     node.destroy_node()
     rclpy.shutdown()

@@ -208,5 +208,6 @@ class Discriminator(nn.Module):
         Returns:
             torch.Tensor: Interpolated reward.
         """
+    
         r = (1.0 - self.task_reward_lerp) * disc_r + self.task_reward_lerp * task_r
         return r
