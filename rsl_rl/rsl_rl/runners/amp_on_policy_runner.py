@@ -112,15 +112,19 @@ class AmpOnPolicyRunner:
             # this is used by the symmetry function for handling different observation terms
             self.alg_cfg["symmetry_cfg"]["_env"] = env
 
-        # AMP 参考帧数：判别器输入 = amp_num_frames 个连续帧的拼接。
-        # 2 即旧的「两帧 transition」行为（等价锚点）；3/4/6 等可任意设定，但改变后旧 checkpoint 不可用。
+        # AMP 参考帧数：判别器输入 = amp_num_frames 个连续帧的拼接
         self.amp_num_frames = int(train_cfg.get("amp_num_frames", 2))
         if self.amp_num_frames < 2:
             raise ValueError(f"amp_num_frames 至少为 2，当前为 {self.amp_num_frames}。")
         # init amp loader
         _loader_name = train_cfg.get("amp_loader")
-        if _loader_name is None:      # 向后兼容旧的布尔开关
+        if _loader_name is None:
+            # amp_loader now lives on the env cfg (env and loader share one switch)
+            _loader_name = getattr(getattr(env, "cfg", None), "amp_loader", None)
+        if _loader_name is None:      
             _loader_name = "z129dof_12dof" if train_cfg.get("amp_use_leg12dof", False) else "z120dof"
+        if _loader_name not in _LOADER_MAP:
+            raise KeyError(f"amp_loader={_loader_name!r} not in _LOADER_MAP; available: {sorted(_LOADER_MAP)}")
         loader_cls = _LOADER_MAP[_loader_name]
         
         amp_data = loader_cls(

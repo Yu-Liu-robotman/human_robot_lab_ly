@@ -8,4 +8,5 @@
 from .amp_on_policy_runner import AmpOnPolicyRunner
 from .on_policy_runner import OnPolicyRunner
 from .dwaq_amp_on_policy_runner import DreamWaQAmpOnPolicyRunner
-__all__ = ["OnPolicyRunner", "AmpOnPolicyRunner", "DreamWaQAmpOnPolicyRunner"]
+from .dual_policy_distillation_runner import DualPolicyDistillationRunner
+__all__ = ["OnPolicyRunner", "AmpOnPolicyRunner", "DreamWaQAmpOnPolicyRunner", "DualPolicyDistillationRunner"]

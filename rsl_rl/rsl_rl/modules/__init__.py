@@ -13,6 +13,8 @@ from .student_teacher import StudentTeacher
 from .student_teacher_recurrent import StudentTeacherRecurrent
 from .discriminator import Discriminator
 from .actor_critic_dwaq import ActorCriticDreamWaQ
+from .actor_critic_moe import ActorCriticMoE
+from .dual_teacher_moe_student import DualTeacherMoEStudent
 __all__ = [
     "ActorCritic",
     "ActorCriticRecurrent",
@@ -21,5 +23,7 @@ __all__ = [
     "StudentTeacher",
     "StudentTeacherRecurrent",
     "Discriminator",
-    "ActorCriticDreamWaQ"
+    "ActorCriticDreamWaQ",
+    "ActorCriticMoE",
+    "DualTeacherMoEStudent",
 ]

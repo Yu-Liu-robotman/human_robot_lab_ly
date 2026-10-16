@@ -39,12 +39,12 @@ class AMPLoader:
         0, 1, 2, 3, 4, 5, 
         6, 7, 8, 9, 10, 11,
         12, 13, 14, 
-        # 15, 16, 17, 18,
-        # 19, 20, 21, 22,
+        15, 16, 17, 18,
+        19, 20, 21, 22,
     ]
     
-    S_JOINT_POS_SIZE = 15 # 手臂 8 关节一并纳入 AMP
-    S_JOINT_VEL_SIZE = 15
+    S_JOINT_POS_SIZE = 23 # 手臂 8 关节一并纳入 AMP
+    S_JOINT_VEL_SIZE = 23
     S_END_EFFECTOR_POS_SIZE = 3*6  # 3 * KEY_POS_LIST 对应数量
     
     S_JOINT_POSE_START_IDX = 0

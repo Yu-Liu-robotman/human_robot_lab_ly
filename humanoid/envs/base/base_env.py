@@ -74,9 +74,11 @@ class BaseEnv(VecEnv):
         self.reset(env_ids)
 
     def init_termination_manager(self):
-        self.cfg.terminations.base_contact.params["sensor_cfg"].body_names = (
-            self.cfg.robot.terminate_contacts_body_names
-        )
+        # base_contact 可能被某个任务的 cfg 关掉（设成 None），此时不能访问它的 params
+        if self.cfg.terminations.base_contact is not None:
+            self.cfg.terminations.base_contact.params["sensor_cfg"].body_names = (
+                self.cfg.robot.terminate_contacts_body_names
+            )
         self.termination_manager = TerminationManager(self.cfg.terminations, self)
 
     def init_buffers(self):

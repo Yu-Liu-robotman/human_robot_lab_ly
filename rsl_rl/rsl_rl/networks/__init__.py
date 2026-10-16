@@ -6,5 +6,7 @@
 """Definitions for neural networks."""
 
 from .memory import Memory
+from .mlp import MLP
+from .moe import MoELayer
 
-__all__ = ["Memory"]
+__all__ = ["Memory", "MLP", "MoELayer"]

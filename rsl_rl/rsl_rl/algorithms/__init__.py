@@ -9,4 +9,5 @@ from .amp_ppo import AMPPPO
 from .distillation import Distillation
 from .ppo import PPO
 from .dwaq_amp_ppo import DreamWaQAMPPPO
-__all__ = ["PPO", "Distillation", "AMPPPO", "DreamWaQAMPPPO"]
+from .dual_policy_distillation import DualPolicyDistillation
+__all__ = ["PPO", "Distillation", "AMPPPO", "DreamWaQAMPPPO", "DualPolicyDistillation"]

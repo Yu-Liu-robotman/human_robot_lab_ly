@@ -525,10 +525,17 @@ def arm_swing_natural(
     sh_cfg: SceneEntityCfg,          # joint_ids=[左肩 shoulder_pitch, 右肩 shoulder_pitch]
     hip_cfg: SceneEntityCfg,         # joint_ids=[左髋 hip_pitch, 右髋 hip_pitch]（同侧配对）
     swing_gain: float = 0.65,        # 肩 pitch 目标 = -swing_gain · 髋 pitch(相对默认位)
-    max_swing: float = 0.85,         # 肩 pitch 目标硬上界(rad)
+    max_swing: float = 0.85,         # 前/后两侧的硬上界(rad)；下面两个参数可覆盖单侧
     lead_time: float = 0.15,         # 相位超前：用 h + lead_time·ḣ 抵消执行器滞后
     smooth_alpha: float = 0.25,      # 目标一阶低通系数（治抖）
     arm_vel_gain: float = 0.02,      # 肩角速度阻尼
+    elbow_cfg: SceneEntityCfg = None,  # joint_ids=[左肘, 右肘]；给了就让肘跟着摆
+    elbow_ratio: float = 0.4,        # 肘目标 = elbow_sign · elbow_ratio · 肩目标
+    elbow_sign: float = 1.0,         # 肘与肩同相(+1) / 反相(-1)
+    elbow_vel_gain: float = 0.02,    # 肘角速度阻尼
+    swing_bias: float = 0.0,         # 摆臂中心偏移(rad)。+  = 整体往后，- = 整体往前
+    max_swing_back: float = None,    # 向后侧(+肩 pitch)上界(rad)，默认 = max_swing
+    max_swing_fwd: float = None,     # 向前侧上界(rad)，默认 = max_swing
     command_threshold: float = 0.1,
 ) -> torch.Tensor:
     asset: Articulation = env.scene[sh_cfg.name]
@@ -540,8 +547,13 @@ def arm_swing_natural(
     h = asset.data.joint_pos[:, hip_cfg.joint_ids] - asset.data.default_joint_pos[:, hip_cfg.joint_ids]
     hd = asset.data.joint_vel[:, hip_cfg.joint_ids]
 
-    # ---- 同侧反相 + 相位超前 ----
-    tgt = torch.clamp(-swing_gain * (h + lead_time * hd), -max_swing, max_swing)
+    # ---- 同侧反相 + 相位超前 + 中心偏移 ----
+    # 约定（已用 MJCF 实测）：肩 pitch 正 = 手向后，髋 pitch 正 = 腿向后；
+    # 所以 tgt 正 = 向后、tgt 负 = 向前，两侧可分别限幅。
+    raw = -swing_gain * (h + lead_time * hd) + swing_bias
+    lo = -max_swing if max_swing_fwd is None else -abs(max_swing_fwd)
+    hi = max_swing if max_swing_back is None else abs(max_swing_back)
+    tgt = torch.clamp(raw, lo, hi)
 
     # ---- 目标一阶低通（每个 env 一份；reset 的 env 直接对齐，不跨 episode 残留）----
     prev = getattr(env, "_arm_swing_tgt", None)
@@ -562,7 +574,22 @@ def arm_swing_natural(
     ).float()
     tgt = tgt * moving.unsqueeze(-1)
 
-    return torch.sum(torch.abs(q - tgt), dim=-1) + arm_vel_gain * torch.sum(qd ** 2, dim=-1)
+    loss = torch.sum(torch.abs(q - tgt), dim=-1) + arm_vel_gain * torch.sum(qd ** 2, dim=-1)
+
+    if elbow_cfg is not None:
+        assert len(elbow_cfg.joint_ids) == 2, "elbow_cfg 必须是 [左肘, 右肘]"
+        qe = asset.data.joint_pos[:, elbow_cfg.joint_ids] - asset.data.default_joint_pos[
+            :, elbow_cfg.joint_ids
+        ]
+        qde = asset.data.joint_vel[:, elbow_cfg.joint_ids]
+        elbow_tgt = elbow_sign * elbow_ratio * tgt
+        loss = (
+            loss
+            + torch.sum(torch.abs(qe - elbow_tgt), dim=-1)
+            + elbow_vel_gain * torch.sum(qde ** 2, dim=-1)
+        )
+
+    return loss
 
 
 def arm_clear_body(
@@ -570,8 +597,8 @@ def arm_clear_body(
     asset_cfg: SceneEntityCfg,      # joint_ids 必须按此顺序：左roll, 右roll, 左yaw, 右yaw, 左肘, 右肘
     roll_offset: float = 0.05,      # 肩 roll 的**恒定**目标 = 默认位 + 该偏置（左右镜像）
     roll_gain: float = 10.0,        # roll 的额外权重：把它**锁死**，不许收来收去
-    elbow_deadband: float = 0.25,   # 肘相对默认位的自由活动范围(rad)：不锁死
-    elbow_vel_gain: float = 0.05,   # 肘角速度阻尼：治「小臂乱晃」
+    elbow_deadband: float = 0.0,    # 肘位置惩罚死区(rad)；<=0 = 不罚位置（肘轨迹交给 arm_swing_natural）
+    elbow_vel_gain: float = 0.0,    # 肘角速度阻尼；默认 0，避免与 arm_swing_natural 重复罚
 ) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
     assert len(asset_cfg.joint_ids) == 6, "joint_ids 必须是 [左roll, 右roll, 左yaw, 右yaw, 左肘, 右肘]"
@@ -587,6 +614,10 @@ def arm_clear_body(
     )
     roll = roll_gain * torch.sum(torch.abs(q[:, :2] - off), dim=-1)               # 锁死
     yaw = torch.sum(torch.abs(q[:, 2:4]), dim=-1)                                 # 不扭
-    elbow = torch.relu(torch.abs(q[:, 4:]) - elbow_deadband).sum(dim=-1)          # 超死区才罚
+    # 肘：默认完全不罚位置，允许它跟肩摆自由活动；只有显式给正死区才补罚
+    if elbow_deadband > 0.0:
+        elbow = torch.relu(torch.abs(q[:, 4:]) - elbow_deadband).sum(dim=-1)
+    else:
+        elbow = 0.0
     damp = elbow_vel_gain * torch.sum(qd[:, 4:] ** 2, dim=-1)                     # 肘阻尼
     return roll + yaw + elbow + damp

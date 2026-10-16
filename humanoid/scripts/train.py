@@ -2,7 +2,12 @@
 
 import argparse
 from isaaclab.app import AppLauncher
-from rsl_rl.runners import OnPolicyRunner, AmpOnPolicyRunner, DreamWaQAmpOnPolicyRunner
+from rsl_rl.runners import (
+    OnPolicyRunner,
+    AmpOnPolicyRunner,
+    DreamWaQAmpOnPolicyRunner,
+    DualPolicyDistillationRunner,
+)
 
 from humanoid.utils import task_registry
 

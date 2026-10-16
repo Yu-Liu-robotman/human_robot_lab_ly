@@ -156,7 +156,7 @@ def export_sim2simconfig(export_path, mjcf_path=None):
 def resolve_mjcf_source(experiment_name: str):
     """按实验名推断 MJCF 源文件，找不到返回 None。
 
-    例：``z1_20dof_amp_sym_flat``    -> humanoid/assets/z1/mjcf/z1_v1_20dof.xml
+    例：``z1_29dof_amp_sym_flat``   -> humanoid/assets/z1/mjcf/z1_v1_29dof.xml
         ``t2pro_20dof_amp_flat``     -> humanoid/assets/t2pro/mjcf/t2pro_20dof.xml
 
     依次尝试 ``<robot>_v1_<N>dof.xml`` -> ``<robot>_<N>dof.xml`` ->

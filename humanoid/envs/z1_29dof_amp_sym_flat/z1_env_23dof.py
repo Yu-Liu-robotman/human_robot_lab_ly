@@ -14,7 +14,11 @@ from isaaclab.utils.buffers import CircularBuffer, DelayBuffer
 from isaaclab.utils.math import quat_apply, quat_conjugate, quat_rotate
 from scipy.spatial.transform import Rotation
 
-from humanoid.envs.z1_29dof_amp_sym_flat.z1_config import Z129DOFFlatEnvCfg, Z129DOFAmpFlatEnvCfg
+from humanoid.envs.z1_29dof_amp_sym_flat.z1_config import (
+    Z129DOFFlatEnvCfg,
+    Z129DOFAmpFlatEnvCfg,
+    AMP_LOADER_JOINT_DIM,
+)
 from humanoid.utils.env_utils.scene import SceneCfg
 from humanoid.envs.base.base_env import BaseEnv
 from humanoid.mdp.command import TlibotUniformVelocityCommand
@@ -790,9 +794,15 @@ class Z1AmpSymEnv29DOF(BaseEnv):
 
         actor_obs, critic_obs = self.compute_observations()
         hist_obs = self.hist_obs_buf.buffer.reshape(self.num_envs, -1)
-        self.extras["observations"] = {"critic": critic_obs,
-                                       "hist_obs": hist_obs,
-                                       "vel_obs": self.vel_buf.clone()}
+        # ---- dual-teacher distillation: teachers share the policy obs, only add selector ----
+        _base_height = self.robot.data.root_pos_w[:, 2:3] - self.terrain_height_at_feet.mean(dim=1, keepdim=True)
+        self.extras["observations"] = {
+            "critic": critic_obs,
+            "hist_obs": hist_obs,
+            "vel_obs": self.vel_buf.clone(),
+            # [gravity_z (current frame), base_height] -- order matters, index-based lookup
+            "selector": torch.cat([actor_obs[:, -1:], _base_height], dim=-1),
+        }
         self.extras["amp_obs_after_step"] = self.amp_obs_after_step
         # reset 之后（新 episode 首帧）的 AMP 帧，供 runner 重置 done env 的历史窗口
         self.extras["amp_obs_after_reset"] = self.get_amp_obs_for_expert_trans(joint_state_from_sim=True)
@@ -849,10 +859,14 @@ class Z1AmpSymEnv29DOF(BaseEnv):
     def get_observations(self):
         actor_obs, critic_obs = self.compute_observations()
         hist_obs = self.hist_obs_buf.buffer.reshape(self.num_envs, -1)
+        # ---- dual-teacher distillation: teachers share the policy obs, only add selector ----
+        _base_height = self.robot.data.root_pos_w[:, 2:3] - self.terrain_height_at_feet.mean(dim=1, keepdim=True)
         self.extras["observations"] = {
             "critic": critic_obs,
             "hist_obs": hist_obs,
             "vel_obs": self.vel_buf.clone(),
+            # [gravity_z (current frame), base_height] -- order matters, index-based lookup
+            "selector": torch.cat([actor_obs[:, -1:], _base_height], dim=-1),
         }
         return actor_obs, self.extras
 
@@ -880,9 +894,17 @@ class Z1AmpSymEnv29DOF(BaseEnv):
         else:
             src_pos = self.dof_pos
             src_vel = self.dof_vel
-        # AMP 只用 15dof（腿 12 + 躯干 3）：手臂不进 AMP，改由 z1_mdp.arm_swing_natural 引导
-        joint_pos = src_pos[:, :15]
-        joint_vel = src_vel[:, :15]
+        # AMP joint count is driven solely by cfg.amp_loader, so that the env and
+        # the loader can never drift apart (mismatch -> "tensor a (60) must match
+        # tensor b (76)").
+        _loader = getattr(self.cfg, "amp_loader", None)
+        if _loader not in AMP_LOADER_JOINT_DIM:
+            raise ValueError(
+                f"cfg.amp_loader={_loader!r} is not registered; available: {sorted(AMP_LOADER_JOINT_DIM)}"
+            )
+        n_amp = AMP_LOADER_JOINT_DIM[_loader]
+        joint_pos = src_pos[:, :n_amp]
+        joint_vel = src_vel[:, :n_amp]
 
         num_body = len(self.key_pos_idx)
         tgt_anchor_pos_w = self.robot.data.body_pos_w[:, self.anchor_idx, :].unsqueeze(1).expand(-1, num_body, -1)

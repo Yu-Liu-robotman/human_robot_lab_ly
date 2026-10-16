@@ -481,14 +481,16 @@ class HumaRobotSimRos(Node):
         print(f"受控 {len(dof_names)} 个: {dof_names}")
         print(f"锁死 {len(locked)} 个: {locked}")
 
-        # ------------------------------------------------------------------
-        # 录制：列格式 == datasets/23dof/gmr/csv4/*.csv
-        #   root_pos(3) + root_rot(xyzw, 4) + dof_pos(N)，无表头
-        #   dof 列顺序 = 目标资产 joint_sdk_names（默认按 exp_name 推断）
-        # 分段：按【空格】开始一段；再按【空格】结束并立即另存为一个文件
-        #       第 k 段 -> {prefix}k.csv（默认 prefix="time" -> time1.csv, time2.csv...）
-        # ------------------------------------------------------------------
         qpos_adr = np.array([model.jnt_qposadr[i] for i in range(1, model.njnt)], dtype=np.int64)
+
+        # ---- getup 任务：初始平躺倒地（其它任务保持原来的站立起手）----
+        if 'getup' in str(param.get('exp_name', '')).lower():
+            data.qpos[0:3] = [0.0, 0.0, 0.18]                     # base_link 离地 0.18m（躺着的高度）
+            data.qpos[3:7] = [0.70710678, 0.0, -0.70710678, 0.0]  # wxyz：绕 y -90°
+            data.qvel[:] = 0.0
+            mujoco.mj_forward(model, data)                        # 同步 sensor（get_obs 直接读 sensor）
+            print(f"[INIT] 初始平躺倒地：root_z={data.qpos[2]:.3f}, quat(wxyz)={np.round(data.qpos[3:7], 3)}")
+
         rec_cols, rec_names = None, None
         rec_dir, rec_prefix = None, 'time'
         rec_rows = []

@@ -1,10 +1,12 @@
 import math
 from dataclasses import MISSING
+from typing import Literal
 
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
 from isaaclab_rl.rsl_rl import (  # noqa:F401
+    RslRlBaseRunnerCfg,
     RslRlOnPolicyRunnerCfg,
     RslRlPpoActorCriticCfg,
     RslRlPpoAlgorithmCfg,
@@ -270,3 +272,88 @@ class BaseAgentCfg(RslRlOnPolicyRunnerCfg):
 
     def __post_init__(self):
         pass
+
+
+# Dual-teacher MoE distillation (DualPolicyDistillation) configurations
+@configclass
+class RslRlDualTeacherMoEStudentCfg:
+    """Student policy configuration for dual-teacher MoE distillation."""
+
+    class_name: str = "DualTeacherMoEStudent"
+
+    init_noise_std: float = 1.0
+    noise_std_type: Literal["scalar", "log"] = "scalar"
+
+    student_hidden_dims: list[int] = MISSING
+    """Hidden dimensions of each student expert."""
+
+    teacher_hidden_dims: list[int] = MISSING
+    """Hidden dimensions of the teachers (shared by actor and critic)."""
+
+    activation: str = "elu"
+
+    teacher_init_noise_std: float = 1.0
+    teacher_noise_std_type: Literal["scalar", "log"] = "scalar"
+
+    num_experts: int = 2
+
+    moe_gate_hidden_dims: list[int] = MISSING
+    """Hidden dimensions of the gate (its input is the policy obs)."""
+
+    moe_gate_activation: str | None = None
+
+    # ---- selector rule: reduce_i( selector_sign_i * selector_i > selector_threshold_i ) ----
+    selector_sign: list[float] = MISSING
+    """Per-dimension sign. E.g. to express
+    "gravity_z > -0.75 or base_height < 0.55" pass [1.0, -1.0]."""
+
+    selector_threshold: list[float] = MISSING
+    """Per-dimension thresholds, same length as selector_sign."""
+
+    selector_reduce: Literal["any", "all"] = "any"
+    """any: use teacher_1 if any dimension hits; all: only if all hit."""
+
+
+@configclass
+class RslRlDualPolicyDistillationAlgorithmCfg:
+    """Algorithm configuration for dual-teacher MoE distillation."""
+
+    class_name: str = "DualPolicyDistillation"
+
+    num_learning_epochs: int = 5
+    gradient_length: int = 1
+    learning_rate: float = 1.0e-3
+    max_grad_norm: float | None = 1.0
+
+    mse_loss_coef: float = 0.1
+    """Weight of the behavior-cloning (MSE) term."""
+
+    kl_loss_coef: float = 0.5
+    """Weight of the KL term against the teacher distribution."""
+
+    optimizer: Literal["adam", "sgd"] = "adam"
+
+
+@configclass
+class RslRlDualPolicyDistillationRunnerCfg(RslRlBaseRunnerCfg):
+    """Runner configuration for dual-teacher MoE distillation."""
+
+    class_name: str = "DualPolicyDistillationRunner"
+    runner_class_name: str = "DualPolicyDistillationRunner"
+
+    policy: RslRlDualTeacherMoEStudentCfg = MISSING
+    algorithm: RslRlDualPolicyDistillationAlgorithmCfg = MISSING
+
+    # Teacher paths live at the top level; they must NOT go into `algorithm`,
+    # otherwise they would be forwarded to the algorithm constructor.
+    teacher_0_checkpoint_path: str = ""
+    """Checkpoint of teacher 0."""
+
+    teacher_1_checkpoint_path: str = ""
+    """Checkpoint of teacher 1."""
+
+    strict_teacher_loading: bool = True
+
+    allow_random_teachers: bool = False
+    """Keep both teachers randomly initialized (pipeline smoke test only).
+    Results are meaningless when this is True."""

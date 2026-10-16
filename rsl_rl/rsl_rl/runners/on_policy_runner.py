@@ -12,7 +12,7 @@ import torch
 from collections import deque
 
 import rsl_rl
-from rsl_rl.algorithms import PPO, Distillation
+from rsl_rl.algorithms import PPO, Distillation, DualPolicyDistillation
 from rsl_rl.env import VecEnv
 from rsl_rl.modules import (
     ActorCritic,
@@ -20,6 +20,7 @@ from rsl_rl.modules import (
     EmpiricalNormalization,
     StudentTeacher,
     StudentTeacherRecurrent,
+    DualTeacherMoEStudent,
 )
 from rsl_rl.utils import store_code_state
 
@@ -42,6 +43,8 @@ class OnPolicyRunner:
             self.training_type = "rl"
         elif self.alg_cfg["class_name"] == "Distillation":
             self.training_type = "distillation"
+        elif self.alg_cfg["class_name"] == "DualPolicyDistillation":
+            self.training_type = "distillation"  # dual-teacher MoE distillation
         else:
             raise ValueError(f"Training type not found for algorithm {self.alg_cfg['class_name']}.")
 
@@ -58,6 +61,9 @@ class OnPolicyRunner:
         if self.training_type == "distillation":
             if "teacher" in extras["observations"]:
                 self.privileged_obs_type = "teacher"  # policy distillation
+            elif "selector" in extras["observations"]:
+                # dual-teacher MoE distillation: the selector is the privileged obs
+                self.privileged_obs_type = "selector"
             else:
                 self.privileged_obs_type = None
 
@@ -69,9 +75,9 @@ class OnPolicyRunner:
 
         # evaluate the policy class
         policy_class = eval(self.policy_cfg.pop("class_name"))
-        policy: ActorCritic | ActorCriticRecurrent | StudentTeacher | StudentTeacherRecurrent = policy_class(
-            num_obs, num_privileged_obs, self.env.num_actions, **self.policy_cfg
-        ).to(self.device)
+        policy: ActorCritic | ActorCriticRecurrent | StudentTeacher | StudentTeacherRecurrent = self._build_policy(
+            policy_class, num_obs, num_privileged_obs
+        )
 
         # resolve dimension of rnd gated state
         if "rnd_cfg" in self.alg_cfg and self.alg_cfg["rnd_cfg"] is not None:
@@ -130,6 +136,14 @@ class OnPolicyRunner:
         self.tot_time = 0
         self.current_learning_iteration = 0
         self.git_status_repos = [rsl_rl.__file__]
+
+    def _build_policy(self, policy_class, num_obs: int, num_privileged_obs: int):
+        """Construct the policy module.
+
+        Overridden by subclasses whose policy takes a different constructor signature
+        (e.g. DualPolicyDistillationRunner).
+        """
+        return policy_class(num_obs, num_privileged_obs, self.env.num_actions, **self.policy_cfg).to(self.device)
 
     def learn(self, num_learning_iterations: int, init_at_random_ep_len: bool = False):  # noqa: C901
         # initialize writer
