@@ -136,7 +136,6 @@ class DreamWaQAmpOnPolicyRunner:
             train_cfg["amp_task_reward_lerp"],
             num_envs=self.env.num_envs,
         ).to(self.device)
-        min_std = torch.zeros(len(train_cfg["min_normalized_std"]), device=self.device, requires_grad=False)
 
         # initialize algorithm
         alg_class = eval(self.alg_cfg.pop("class_name"))
@@ -146,7 +145,6 @@ class DreamWaQAmpOnPolicyRunner:
             amp_data,
             amp_normalizer,
             device=self.device,
-            min_std=min_std,
             **self.alg_cfg,
             multi_gpu_cfg=self.multi_gpu_cfg,
             num_obs=num_obs,

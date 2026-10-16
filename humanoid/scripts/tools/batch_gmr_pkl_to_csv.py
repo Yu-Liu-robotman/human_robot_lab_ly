@@ -14,7 +14,7 @@ def normalize_frame_rate(value, file_name):
 Example usage:
     conda activate g2h
     python /home/user/LY/Gen2Humanoid/third_party/GMR/scripts/batch_gmr_pkl_to_csv.py \
-        --folder /home/user/LY/tlibot_motion_data/z1_v1_23dof
+        --folder /home/user/LY/tlibot_motion_data/t1mini
 """
 
 if __name__ == "__main__":

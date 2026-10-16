@@ -125,6 +125,17 @@ def flat_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg
     asset: Articulation = env.scene[asset_cfg.name]
     return torch.sum(torch.square(asset.data.projected_gravity_b[:, :2]), dim=1)
 
+def flat_orientation_l2_limit_run(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    max_speed: float = 1.0,        # 指令线速度低于它才激活
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    cmd = env.command_generator.command
+    speed = torch.linalg.vector_norm(cmd[:, :2], dim=1)        # 指令线速度 m/s
+    active = (speed < max_speed).float()
+    return torch.sum(torch.square(asset.data.projected_gravity_b[:, :2]), dim=1) * active
+
 def adaptive_flat_orientation_l2(env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
     gravity_xy = asset.data.projected_gravity_b[:, :2]

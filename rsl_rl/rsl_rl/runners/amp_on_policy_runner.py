@@ -36,12 +36,13 @@ from rsl_rl.modules import (
     StudentTeacher,
     StudentTeacherRecurrent,
 )
-from rsl_rl.utils import AMPLoader, AMPLoaderZ120dof12dof, AMPLoaderZ129dof12dof,AMPLoaderZ129dof15dof, Normalizer, store_code_state
+from rsl_rl.utils import AMPLoader, AMPLoaderZ120dof12dof, AMPLoaderZ129dof12dof, AMPLoaderZ129dof15dof, AMPLoaderZ129dof23dof, Normalizer, store_code_state
 _LOADER_MAP = {
     "z120dof": AMPLoader,
     "z120dof_12dof": AMPLoaderZ120dof12dof,
     "z129dof_12dof": AMPLoaderZ129dof12dof,
-    "z129dof_15dof":AMPLoaderZ129dof15dof
+    "z129dof_15dof": AMPLoaderZ129dof15dof,
+    "z129dof_23dof": AMPLoaderZ129dof23dof,
 }
 
 class AmpOnPolicyRunner:
@@ -138,14 +139,11 @@ class AmpOnPolicyRunner:
         # 供 learn() 使用（learn 里无法访问 __init__ 的局部变量）
         self.amp_data = amp_data
         self.amp_frame_dim = amp_data.observation_dim
-        # min_normalized_std：逐维 std 下限。专家数据里恒定维度（std≈0）归一化时会饱和到
-        # ±clip_obs，成为判别器的作弊维度 —— 详见 Normalizer._std()。
-        _min_std = train_cfg.get("min_normalized_std", 0.05)
-        if isinstance(_min_std, (list, tuple)):
-            _min_std = (
-                list(_min_std) if len(_min_std) == amp_data.observation_dim else float(_min_std[0])
-            )
-        amp_normalizer = Normalizer(amp_data.observation_dim, min_std=_min_std)
+        _ms = train_cfg.get("min_normalized_std", 0.05)
+        amp_normalizer = Normalizer(
+            amp_data.observation_dim,
+            min_std=float(_ms[0]) if isinstance(_ms, (list, tuple)) else float(_ms),
+        )
         discriminator = Discriminator(
             amp_data.observation_dim * self.amp_num_frames,
             train_cfg["amp_reward_coef"],
@@ -155,7 +153,6 @@ class AmpOnPolicyRunner:
             num_frames=self.amp_num_frames,
             num_labels=getattr(amp_data, "num_labels", 0),
         ).to(self.device)
-        min_std = torch.zeros(len(train_cfg["min_normalized_std"]), device=self.device, requires_grad=False)
 
         # Reference uses CircularBuffer(max_len=disc_obs_buffer_size, batch_size=num_envs),
         # i.e. capacity = steps * num_envs. Our ReplayBuffer is flat (buffer_size, obs_dim),
@@ -171,7 +168,6 @@ class AmpOnPolicyRunner:
             amp_normalizer,
             device=self.device,
             amp_replay_buffer_size=amp_replay_buffer_size,
-            min_std=min_std,
             **self.alg_cfg,
             multi_gpu_cfg=self.multi_gpu_cfg,
         )

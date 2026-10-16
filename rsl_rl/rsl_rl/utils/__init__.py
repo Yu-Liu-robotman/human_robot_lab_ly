@@ -8,6 +8,7 @@ from .motion_loader_z120dof_20dof import AMPLoader
 from .motion_loader_z120dof_12dof import AMPLoader as AMPLoaderZ120dof12dof
 from .motion_loader_z129dof_12dofAmp import AMPLoader as AMPLoaderZ129dof12dof
 from .motion_loader_z129dof_15dofAmp import AMPLoader as AMPLoaderZ129dof15dof
+from .motion_loader_z129dof_23dofAmp import AMPLoader as AMPLoaderZ129dof23dof
 from .utils import (
     Normalizer,
     resolve_nn_activation,
@@ -21,5 +22,6 @@ __all__ = [
     "AMPLoader",
     "AMPLoaderZ120dof12dof",
     "AMPLoaderZ129dof12dof",
-    "AMPLoaderZ129dof15dof"
+    "AMPLoaderZ129dof15dof",
+    "AMPLoaderZ129dof23dof"
 ]

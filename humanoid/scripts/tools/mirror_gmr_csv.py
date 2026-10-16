@@ -22,14 +22,14 @@ csv 布局（**无表头**，逗号分隔）—— 权威来源 ``humanoid/scrip
 
     # 1) 左右镜像（默认 mode=left-right），输出 <stem>_mirrored.csv
     python humanoid/scripts/tools/mirror_gmr_csv.py \
-        humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/gmr/csv3/foward_segment_0122-0268.csv
+        /home/user/LY/human_z1_lab/huma_robot_lab/humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/gmr/run_and_getup/run2_subject1_left_segment_2150-2200.csv
 
     # 2) 整个目录批量
     python humanoid/scripts/tools/mirror_gmr_csv.py \
         humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/gmr/csv3
 
     # 3) 时间反演：前进 -> 后退
-    python humanoid/scripts/tools/mirror_gmr_csv.py <file.csv> --mode backward
+    python humanoid/scripts/tools/mirror_gmr_csv.py /home/user/LY/human_z1_lab/huma_robot_lab/humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/gmr/run_and_getup/run2_subject1_left_segment_2150-2200.csv --mode backward
 
     # 4) 换机器人变体（关节数不同时必须给对）
     python humanoid/scripts/tools/mirror_gmr_csv.py <file.csv> --dof-names my_20dof_joints.txt

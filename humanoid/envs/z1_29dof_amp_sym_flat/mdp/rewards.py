@@ -408,40 +408,6 @@ def knee_heading_alignment_penalty(
         gate = gate * (~turning).float()
     return torch.sum(err, dim=1) * gate
 
-def arm_swing_alternation_penalty(
-    env: BaseEnv,
-    asset_cfg: SceneEntityCfg,        # joint_ids=[肩L, 肩R]；body_ids=[左踝, 右踝]
-    target_arm_swing: float = 0.18,   # 满抬腿时的摆幅(rad)。调小 = 更轻柔
-    swing_height_ref: float = 0.12,   # 抬到多高才算「满抬起」。调大 = 不轻易触发
-    swing_height_eps: float = 0.03,   # 低于此高度视为贴地
-    arm_vel_gain: float = 0.02,       # 手臂角速度惩罚 —— 「轻柔」的核心
-    command_threshold: float = 0.1,
-) -> torch.Tensor:
-    """轻柔的自然摆臂：按抬腿高度驱动对侧手臂，幅度小、速度慢"""
-    asset: Articulation = env.scene[asset_cfg.name]
-
-    q = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[
-        :, asset_cfg.joint_ids
-    ]
-    qd_arm = asset.data.joint_vel[:, asset_cfg.joint_ids]
-    sh_l, sh_r = q[:, 0], q[:, 1]
-    foot_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]      # (N, 2) = [左, 右]
-    ground_ref = torch.min(foot_z, dim=1, keepdim=True)[0]
-    foot_h = foot_z - ground_ref
-
-    lift = torch.clamp((foot_h - swing_height_eps) / max(swing_height_ref, 1e-6), 0.0, 1.0)
-    lift_l, lift_r = lift[:, 0], lift[:, 1]
-
-    err = torch.abs(sh_l - target_arm_swing * lift_r) + torch.abs(
-        sh_r - target_arm_swing * lift_l
-    )
-    smooth = arm_vel_gain * torch.sum(qd_arm ** 2, dim=-1)
-
-    command = env.command_generator.command
-    moving = torch.linalg.vector_norm(command[:, :3], dim=1) > command_threshold
-
-    return (err + smooth) * moving.float()
-
 def knee_extend_on_contact_penalty(
     env: BaseEnv,
     sensor_cfg: SceneEntityCfg,
@@ -536,14 +502,7 @@ def swing_foot_behind_penalty(
     swing_height_eps: float = 0.01,
     command_threshold: float = 0.1,
 ) -> torch.Tensor:
-    """摆动腿脚跟在髋关节后方超过 max_behind(m) 就罚 —— 专治「后撩」。
 
-    swing_foot_clearance 只考核脚底**高度**，屈膝把脚跟往后上撩与屈髋抬大腿对它等价；
-    feet_air_time 又奖励滞空。两者叠加会主动奖励后撩。这里补上缺失的「机身系前后(x)」维度。
-
-    用两个独立 SceneEntityCfg 传髋/踝，避开 [::2]/[1::2] 在 preserve_order 下的排序歧义
-    （preserve_order=True 返回的是 articulation 自身 body 顺序，不是传入列表顺序）。
-    """
     asset: Articulation = env.scene[ankle_cfg.name]
     rel_w = (
         asset.data.body_pos_w[:, ankle_cfg.body_ids, :]
@@ -559,3 +518,75 @@ def swing_foot_behind_penalty(
     behind = torch.relu(-x_b - max_behind) / max(softness, 1e-6)
     gate = (torch.linalg.vector_norm(env.command_generator.command[:, :3], dim=1) > command_threshold).float()
     return torch.sum(torch.clamp(behind, 0.0, 1.0) * swing.float(), dim=1) * gate
+
+
+def arm_swing_natural(
+    env: BaseEnv,
+    sh_cfg: SceneEntityCfg,          # joint_ids=[左肩 shoulder_pitch, 右肩 shoulder_pitch]
+    hip_cfg: SceneEntityCfg,         # joint_ids=[左髋 hip_pitch, 右髋 hip_pitch]（同侧配对）
+    swing_gain: float = 0.65,        # 肩 pitch 目标 = -swing_gain · 髋 pitch(相对默认位)
+    max_swing: float = 0.85,         # 肩 pitch 目标硬上界(rad)
+    lead_time: float = 0.15,         # 相位超前：用 h + lead_time·ḣ 抵消执行器滞后
+    smooth_alpha: float = 0.25,      # 目标一阶低通系数（治抖）
+    arm_vel_gain: float = 0.02,      # 肩角速度阻尼
+    command_threshold: float = 0.1,
+) -> torch.Tensor:
+    asset: Articulation = env.scene[sh_cfg.name]
+    assert len(sh_cfg.joint_ids) == 2, "sh_cfg 必须是 [左肩 shoulder_pitch, 右肩 shoulder_pitch]"
+    assert len(hip_cfg.joint_ids) == 2, "hip_cfg 必须是 [左髋 hip_pitch, 右髋 hip_pitch]"
+
+    q = asset.data.joint_pos[:, sh_cfg.joint_ids] - asset.data.default_joint_pos[:, sh_cfg.joint_ids]
+    qd = asset.data.joint_vel[:, sh_cfg.joint_ids]
+    h = asset.data.joint_pos[:, hip_cfg.joint_ids] - asset.data.default_joint_pos[:, hip_cfg.joint_ids]
+    hd = asset.data.joint_vel[:, hip_cfg.joint_ids]
+
+    # ---- 同侧反相 + 相位超前 ----
+    tgt = torch.clamp(-swing_gain * (h + lead_time * hd), -max_swing, max_swing)
+
+    # ---- 目标一阶低通（每个 env 一份；reset 的 env 直接对齐，不跨 episode 残留）----
+    prev = getattr(env, "_arm_swing_tgt", None)
+    if prev is None or prev.shape != tgt.shape:
+        env._arm_swing_tgt = tgt.clone()
+    else:
+        tgt = (1.0 - smooth_alpha) * prev + smooth_alpha * tgt
+        env._arm_swing_tgt = tgt.clone()
+    reset_buf = getattr(env, "reset_buf", None)
+    if reset_buf is not None:
+        ids = reset_buf.nonzero(as_tuple=False).flatten()
+        if ids.numel() > 0:
+            env._arm_swing_tgt[ids] = tgt[ids]
+
+    # 站立/零指令：目标归零（回默认位，不摆）
+    moving = (
+        torch.linalg.vector_norm(env.command_generator.command[:, :3], dim=1) > command_threshold
+    ).float()
+    tgt = tgt * moving.unsqueeze(-1)
+
+    return torch.sum(torch.abs(q - tgt), dim=-1) + arm_vel_gain * torch.sum(qd ** 2, dim=-1)
+
+
+def arm_clear_body(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg,      # joint_ids 必须按此顺序：左roll, 右roll, 左yaw, 右yaw, 左肘, 右肘
+    roll_offset: float = 0.05,      # 肩 roll 的**恒定**目标 = 默认位 + 该偏置（左右镜像）
+    roll_gain: float = 10.0,        # roll 的额外权重：把它**锁死**，不许收来收去
+    elbow_deadband: float = 0.25,   # 肘相对默认位的自由活动范围(rad)：不锁死
+    elbow_vel_gain: float = 0.05,   # 肘角速度阻尼：治「小臂乱晃」
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    assert len(asset_cfg.joint_ids) == 6, "joint_ids 必须是 [左roll, 右roll, 左yaw, 右yaw, 左肘, 右肘]"
+    q = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[
+        :, asset_cfg.joint_ids
+    ]
+    qd = asset.data.joint_vel[:, asset_cfg.joint_ids]
+    # roll 恒定目标：左 +roll_offset / 右 -roll_offset（镜像外展）
+    off = torch.tensor(
+        [roll_offset, -roll_offset],
+        device=q.device,
+        dtype=q.dtype,
+    )
+    roll = roll_gain * torch.sum(torch.abs(q[:, :2] - off), dim=-1)               # 锁死
+    yaw = torch.sum(torch.abs(q[:, 2:4]), dim=-1)                                 # 不扭
+    elbow = torch.relu(torch.abs(q[:, 4:]) - elbow_deadband).sum(dim=-1)          # 超死区才罚
+    damp = elbow_vel_gain * torch.sum(qd[:, 4:] ** 2, dim=-1)                     # 肘阻尼
+    return roll + yaw + elbow + damp

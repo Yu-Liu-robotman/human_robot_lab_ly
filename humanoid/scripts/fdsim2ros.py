@@ -103,8 +103,8 @@ def keyboard_control(key):
     """."""
     if key == '8':
         cmd.vx = cmd.vx + 0.05
-        if cmd.vx > 1.0:
-            cmd.vx = 1.0
+        if cmd.vx > 4.0:
+            cmd.vx = 4.0
     if key == '2':
         cmd.vx = cmd.vx - 0.05
         if cmd.vx < -0.6:

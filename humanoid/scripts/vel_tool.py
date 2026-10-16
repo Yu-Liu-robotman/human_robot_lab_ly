@@ -3,7 +3,7 @@
 
 用法：
     python humanoid/scripts/vel_tool.py                 # 扫描默认数据集目录 + 对照 z1_config.py
-    python humanoid/scripts/vel_tool.py humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt           # 扫描指定目录
+    python humanoid/scripts/vel_tool.py humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/run_and_getup/txt           # 扫描指定目录
     python humanoid/scripts/vel_tool.py a.txt b.txt     # 只看指定文件
     python humanoid/scripts/vel_tool.py --sort vx       # 按 vx 均值排序
     python humanoid/scripts/vel_tool.py --no-config     # 不做配置对照

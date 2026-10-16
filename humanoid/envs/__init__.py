@@ -29,7 +29,7 @@ try:
 
     task_registry.register("z1_29dof_flat", Z1AmpSymEnv29DOF, Z129DOFFlatEnvCfg(), Z129DOFFlatAgentCfg())
     task_registry.register("z1_29dof_amp_flat", Z1AmpSymEnv29DOF, Z129DOFAmpFlatEnvCfg(), Z129DOFAmpFlatAgentCfg())
-    task_registry.register("z1_29dof_15amp_sym_flat", Z1AmpSymEnv29DOF, Z129DOFAmpFlatSymEnvCfg(), Z129DOFAmpFlatSymAgentCfg())
+    task_registry.register("z1_29dof_23amp_sym_flat", Z1AmpSymEnv29DOF, Z129DOFAmpFlatSymEnvCfg(), Z129DOFAmpFlatSymAgentCfg())
 except Exception as _e:  # noqa: BLE001
     print(f"[WARN] z1_29dof 任务注册失败（humanoid/assets/z1/z1_29dof.py 可能尚未创建）: {_e}")
 

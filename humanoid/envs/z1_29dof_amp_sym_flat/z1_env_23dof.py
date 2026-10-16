@@ -185,6 +185,7 @@ class Z1AmpSymEnv29DOF(BaseEnv):
         self.episode_length_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.long)
         self.sim_step_counter = 0
         self.time_out_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+        # 模型的可控关节
         self.dof_names = [
             "leg_left_hip_pitch_joint",
             "leg_left_hip_roll_joint",
@@ -201,14 +202,16 @@ class Z1AmpSymEnv29DOF(BaseEnv):
             "torso_yaw_joint",
             "torso_pitch_joint",
             "torso_roll_joint",
-            # "arm_left_shoulder_pitch_joint",
-            # "arm_left_shoulder_roll_joint",
-            # "arm_left_shoulder_yaw_joint",
-            # "arm_left_elbow_joint",
-            # "arm_right_shoulder_pitch_joint",
-            # "arm_right_shoulder_roll_joint",
-            # "arm_right_shoulder_yaw_joint",
-            # "arm_right_elbow_joint",
+            
+            "arm_left_shoulder_pitch_joint",
+            "arm_left_shoulder_roll_joint",
+            "arm_left_shoulder_yaw_joint",
+            "arm_left_elbow_joint",
+
+            "arm_right_shoulder_pitch_joint",
+            "arm_right_shoulder_roll_joint",
+            "arm_right_shoulder_yaw_joint",
+            "arm_right_elbow_joint",
         ]
         self.action_scale_list = self.build_scale_list(self.cfg.robot.action_scale, self.dof_names)
         self.action_scale = torch.tensor(
@@ -877,20 +880,9 @@ class Z1AmpSymEnv29DOF(BaseEnv):
         else:
             src_pos = self.dof_pos
             src_vel = self.dof_vel
-        joint_pos = src_pos[:, [
-            0, 1, 2, 3, 4, 5, 
-            6, 7, 8, 9, 10, 11,
-            12, 13, 14, 
-            # 15, 
-            # 16, 17, 18, 19
-        ]]
-        joint_vel = src_vel[:, [
-            0, 1, 2, 3, 4, 5, 
-            6, 7, 8, 9, 10, 11,
-            12, 13, 14, 
-            # 15, 
-            # 16, 17, 18, 19
-        ]]
+        # AMP 只用 15dof（腿 12 + 躯干 3）：手臂不进 AMP，改由 z1_mdp.arm_swing_natural 引导
+        joint_pos = src_pos[:, :15]
+        joint_vel = src_vel[:, :15]
 
         num_body = len(self.key_pos_idx)
         tgt_anchor_pos_w = self.robot.data.body_pos_w[:, self.anchor_idx, :].unsqueeze(1).expand(-1, num_body, -1)
