@@ -16,7 +16,6 @@ from scipy.spatial.transform import Rotation
 
 from humanoid.envs.z1_29dof_amp_sym_flat.z1_config import (
     Z129DOFFlatEnvCfg,
-    Z129DOFAmpFlatEnvCfg,
     AMP_LOADER_JOINT_DIM,
 )
 from humanoid.utils.env_utils.scene import SceneCfg
@@ -61,14 +60,10 @@ def get_euler_xyz_tensor(quat):
 class Z1AmpSymEnv29DOF(BaseEnv):
     def __init__(
         self,
-        cfg: (
-            Z129DOFFlatEnvCfg | Z129DOFAmpFlatEnvCfg
-        ),
+        cfg: Z129DOFFlatEnvCfg,
         headless,
     ):
-        self.cfg: (
-            Z129DOFFlatEnvCfg | Z129DOFAmpFlatEnvCfg
-        )
+        self.cfg: Z129DOFFlatEnvCfg
 
         self.cfg = cfg
         self.headless = headless
@@ -688,6 +683,12 @@ class Z1AmpSymEnv29DOF(BaseEnv):
         self.ds_time[env_ids]            = 0.0
         self.ds_time_zero[env_ids]       = 0.0
         self.last_contact_mask[env_ids]  = 0.0
+        # getup 类任务（commands.modes 只有 "stand" 一档）：stand_flag 恒 +1。
+        # 它在 __init__ 里只随机一次（randint*2-1）、之后永不重采样 → stand_mask 只覆盖
+        # 随机到 +1 的那约一半 env，stand_still_*_getup 对另一半环境永远不生效。
+        _modes = list(getattr(self.cfg.commands, "modes", None) or [])
+        if len(_modes) == 1 and "stand" in str(getattr(_modes[0], "name", "")).lower():
+            self.stand_flag[env_ids] = 1
         self.extras["log"] = dict()
         if self.cfg.scene.terrain_generator is not None:
             if self.cfg.scene.terrain_generator.curriculum:
@@ -960,7 +961,7 @@ class Z1AmpSymEnv29DOF(BaseEnv):
                 joint_pos,
                 joint_vel,
                 root_ori,
-                root_lin_vel_b,
+                # root_lin_vel_b,
                 root_ang_vel_b,
                 tgt_robot_body_pos_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
                 # tgt_robot_body_ori_b.reshape(tgt_robot_body_pos_b.shape[0], -1),

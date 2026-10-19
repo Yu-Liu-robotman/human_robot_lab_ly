@@ -241,14 +241,14 @@ class BaseAgentCfg(RslRlOnPolicyRunnerCfg):
         activation="elu",
     )
     algorithm = RslRlPpoAlgorithmCfg(
-        class_name= "PPO", #"AMPPPO",
+        class_name= "AMPPPO",
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.005,
+        entropy_coef=0.01,
         num_learning_epochs=5,
         num_mini_batches=4,
-        learning_rate=1.0e-3,
+        learning_rate=2.0e-4,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
@@ -260,7 +260,7 @@ class BaseAgentCfg(RslRlOnPolicyRunnerCfg):
     )
     clip_actions = None
     save_interval = 100
-    runner_class_name = "OnPolicyRunner" # "AmpOnPolicyRunner"
+    runner_class_name = "AmpOnPolicyRunner"
     experiment_name = "t1pro_flat"
     run_name = ""
     logger = "tensorboard"
@@ -269,6 +269,12 @@ class BaseAgentCfg(RslRlOnPolicyRunnerCfg):
     resume = False
     load_run = ".*"
     load_checkpoint = "model_.*.pt"
+
+    # AMP
+    amp_num_preload_transitions = 5000
+    amp_dynamic_expert_sampling = True
+    amp_num_frames = 5
+    amp_discr_hidden_dims = [1024, 512]
 
     def __post_init__(self):
         pass

@@ -133,49 +133,47 @@ def gradient_orientation(
     reward = _tolerance(-asset.data.projected_gravity_b[:, 2], (0.99, np.inf), 1.0, 0.05)
     return reward * standup
 
-def leglab_stand_still_joint_deviation_l1_getup(
+def base_height_getup(
     env: BaseEnv,
-    command_threshold: float = 0.1,
+    target_height: float = 0.846,
+    deadband: float = 0.15,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-    stand_cmd: bool = False,
-    min_base_height: float = 0.6,
 ) -> torch.Tensor:
-    """Penalize offsets from the default joint positions when the command is very small.
+    """Linear 0 -> 1 as the base rises from ``target_height - deadband`` to full standing."""
+    base_z = env.scene[asset_cfg.name].data.root_link_pos_w[:, 2]
+    return ((base_z - target_height + deadband) / deadband).clamp(0.0, 1.0)
 
-    只在 root 高度超过 ``min_base_height``（已经站起来了）之后才生效，否则会拖住起身过程。
 
-    NOTE: 只统计**策略可控**的关节（env.dof_ids）。
-    asset_cfg 若写成 ".*_joint" 会匹配到全部 29 个关节，其中 14 个上半身关节由随机大幅
-    运动 / 外部负载驱动，策略根本控制不了 —— 那部分惩罚既削不掉、方差又极大，会把站立 /
-    行走的有效信号淹没（return 被一个常量级负项主导）。
-    """
-    # Penalize motion when command is nearly zero.
-    if stand_cmd:
-        active = env.stand_mask[:, 0].float() # 站立命令时，只有stand_mask为1才惩罚
-    else:
-        command = env.command_generator.command
-        linear_norm = torch.norm(command[:, :2], dim=1)
-        angular_norm = torch.abs(command[:, 2])
-        total_command = linear_norm + angular_norm
-        active = (total_command < command_threshold).float()
-    if min_base_height > 0.0:
-        active = active * (env.robot.data.root_link_pos_w[:, 2] > min_base_height).float()
-    return controlled_joint_deviation_l1(env, asset_cfg) * active # 没速度时限制策略可控的关节位置
-
-def controlled_joint_deviation_l1(
-    env: BaseEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+def getup_speed_limit(
+    env: BaseEnv,
+    vz_max: float = 0.6,
+    qd_max: float = 4.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
-    """joint_deviation_l1 的受限版本：只统计策略可控的关节（env.dof_ids 与 asset_cfg.joint_ids 的交集）。"""
+    """Penalise only the part of the motion ABOVE the limits, so a normal-speed getup costs nothing."""
+    data = env.scene[asset_cfg.name].data
+    vz = torch.clamp(data.root_lin_vel_w[:, 2].abs() - vz_max, min=0.0)
+    qd = torch.clamp(data.joint_vel[:, env.dof_ids].abs() - qd_max, min=0.0)
+    return torch.square(vz) + torch.square(qd).mean(dim=1)
+
+
+def stand_still_getup(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    stand_height: float = 0.72,
+    ramp_height: float = 0.10,
+    pose_deadband: float = 0.25,
+    pose_gain: float = 1.0,
+    vel_gain: float = 0.05,
+) -> torch.Tensor:
+    """Stand-still cost gated by base height; pose error has a deadband, plus joint-vel damping."""
     asset: Articulation = env.scene[asset_cfg.name]
-    ids = asset_cfg.joint_ids
-    dof_ids = getattr(env, "dof_ids", None)
-    if dof_ids is not None:
-        allowed = set(dof_ids.tolist()) if torch.is_tensor(dof_ids) else set(int(i) for i in dof_ids)
-        if isinstance(ids, slice):
-            ids = sorted(allowed)
-        else:
-            ids = [int(i) for i in ids if int(i) in allowed]
-        if len(ids) == 0:
-            return torch.zeros(asset.data.joint_pos.shape[0], device=asset.data.joint_pos.device)
-    angle = asset.data.joint_pos[:, ids] - asset.data.default_joint_pos[:, ids]
-    return torch.sum(torch.abs(angle), dim=1)
+    dof_ids = env.dof_ids.tolist() if torch.is_tensor(env.dof_ids) else list(env.dof_ids)
+    ids = [i for i in asset_cfg.joint_ids if i in dof_ids]
+
+    gate = ((asset.data.root_link_pos_w[:, 2] - stand_height) / ramp_height).clamp(0.0, 1.0)
+    dev = (asset.data.joint_pos[:, ids] - asset.data.default_joint_pos[:, ids]).abs()
+    pose = torch.clamp(dev - pose_deadband, min=0.0).sum(dim=1) * pose_gain
+    vel = torch.square(asset.data.joint_vel[:, ids]).sum(dim=1) * vel_gain
+
+    return (pose + vel) * gate

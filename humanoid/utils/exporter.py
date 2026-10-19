@@ -8,6 +8,18 @@ import os
 import torch
 from typing import Optional
 
+def _get_export_actor(module):
+    """取真正可前向的 actor：MoE 蒸馏的 policy.student 是 ActorCriticMoE，
+    它的 forward 不接受输入，真正的网络在 student.actor 里。"""
+    return getattr(module, "actor", module)
+
+
+def _actor_input_dim(actor) -> int:
+    """MLP 是 Sequential（用 [0].in_features），MoELayer 直接有 input_dim。"""
+    dim = getattr(actor, "input_dim", None)
+    return int(dim) if dim is not None else int(actor[0].in_features)
+
+
 def export_policy_as_jit(policy: object, normalizer: Optional[object], path: str, filename="policy.pt"):
     """Export policy into a Torch JIT file.
 
@@ -57,7 +69,7 @@ class _TorchPolicyExporter(torch.nn.Module):
             if self.is_recurrent:
                 self.rnn = copy.deepcopy(policy.memory_a.rnn)
         elif hasattr(policy, "student"):
-            self.actor = copy.deepcopy(policy.student)
+            self.actor = copy.deepcopy(_get_export_actor(policy.student))
             if self.is_recurrent:
                 self.rnn = copy.deepcopy(policy.memory_s.rnn)
         else:
@@ -115,7 +127,7 @@ class _OnnxPolicyExporter(torch.nn.Module):
             if self.is_recurrent:
                 self.rnn = copy.deepcopy(policy.memory_a.rnn)
         elif hasattr(policy, "student"):
-            self.actor = copy.deepcopy(policy.student)
+            self.actor = copy.deepcopy(_get_export_actor(policy.student))
             if self.is_recurrent:
                 self.rnn = copy.deepcopy(policy.memory_s.rnn)
         else:
@@ -159,7 +171,7 @@ class _OnnxPolicyExporter(torch.nn.Module):
                 dynamic_axes={},
             )
         else:
-            obs = torch.zeros(1, self.actor[0].in_features)
+            obs = torch.zeros(1, _actor_input_dim(self.actor))
             torch.onnx.export(
                 self,
                 obs,

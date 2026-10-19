@@ -54,7 +54,7 @@ class AMPLoader:
     S_JOINT_VEL_START_IDX = S_JOINT_POSE_END_IDX
     S_JOINT_VEL_END_IDX = S_JOINT_VEL_START_IDX + S_JOINT_VEL_SIZE
     S_ROOT_ROT_SIZE = 6
-    S_ROOT_LINVEL_SIZE = 3
+    S_ROOT_LINVEL_SIZE = 0
     S_ROOT_ANGVEL_SIZE = 3
     S_ROOT_ROT_START_IDX = S_JOINT_VEL_END_IDX
     S_ROOT_ROT_END_IDX = S_ROOT_ROT_START_IDX + S_ROOT_ROT_SIZE
@@ -325,7 +325,7 @@ class AMPLoader:
                     joint_pos_mujoco[:, AMPLoader.joint_mujoco_select].cpu().numpy(), # N
                     joint_vel_mujoco[:, AMPLoader.joint_mujoco_select].cpu().numpy(), # N
                     root_rot_tan_norm.cpu().numpy(),      # 6
-                    select_root_lin_vel_b.cpu().numpy(),  # 3  root 线速度（机身系）：纯 AMP 下唯一的"前进"信号
+                    # select_root_lin_vel_b.cpu().numpy(),  # 3  root 线速度（机身系）
                     root_ang_vel_b.cpu().numpy(),         # 3
                     # select_root_ori.cpu().numpy(), # 6
                     # select_root_lin_vel_b.cpu().numpy(), # 3

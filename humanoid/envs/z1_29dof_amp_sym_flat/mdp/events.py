@@ -97,6 +97,85 @@ def apply_payload_wrench(
     )
 
 
+def apply_getup_assist(
+    env: BaseEnv,
+    env_ids: torch.Tensor | None,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    assist_mass: float = 10.0,
+    anneal_steps: int = 60000,
+    delay_steps: int = 0,
+    start_ratio: float = 1.0,
+    end_ratio: float = 0.0,
+    power: float = 1.0,
+    gated_by_height: bool = True,
+    stand_height: float = 0.6,
+    trigger_height: float | None = None,
+    ema_alpha: float = 0.01,
+):
+    """Constant upward force on a torso link, annealed away.
+
+    ``trigger_height=None`` -> annealing starts at ``delay_steps`` (step based).
+    Otherwise annealing does not start until the EMA of the population-mean base
+    height reaches ``trigger_height`` (performance based), and ``delay_steps`` is
+    then counted from that moment.
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    if env_ids is None:
+        env_ids = torch.arange(asset.num_instances, device=asset.device)
+    n, device = len(env_ids), asset.device
+
+    body_ids = asset_cfg.body_ids
+    if isinstance(body_ids, slice):          # 没写 body_names 时的兜底
+        body_ids = [asset.body_names.index("base_link")]
+
+    decimation = max(1, int(getattr(env.cfg.sim, "decimation", 1)))
+    step = int(getattr(env, "sim_step_counter", 0)) // decimation
+
+    # population-mean base height, EMA-smoothed (curriculum metric)
+    h = asset.data.root_link_pos_w[:, 2].mean().item()
+    h_ema = getattr(env, "_getup_assist_h_ema", h) + ema_alpha * (h - getattr(env, "_getup_assist_h_ema", h))
+    env._getup_assist_h_ema = h_ema
+
+    t0 = getattr(env, "_getup_assist_t0", None)
+    if trigger_height is None:
+        t0 = 0 if t0 is None else t0
+        env._getup_assist_t0 = 0
+    elif t0 is None and h_ema >= trigger_height:
+        t0 = step
+        env._getup_assist_t0 = step
+
+    if anneal_steps <= 0:
+        ratio = float(end_ratio)
+    elif t0 is None:
+        ratio = float(start_ratio)
+    else:
+        p = (step - t0 - int(delay_steps)) / float(anneal_steps)
+        p = 0.0 if p < 0.0 else (1.0 if p > 1.0 else p)
+        ratio = start_ratio + (end_ratio - start_ratio) * (p ** power)
+    ratio = ratio if ratio > 0.0 else 0.0
+
+    if "log" not in env.extras:
+        env.extras["log"] = {}
+    env.extras["log"]["getup_assist/ratio"] = ratio
+    env.extras["log"]["getup_assist/force_n"] = assist_mass * 9.81 * ratio
+
+    active = ratio > 0.0
+    if not active:
+        if getattr(env, "_getup_assist_cleared", False):
+            return
+        env._getup_assist_cleared = True          # 本次写 0 力清零，之后 return
+
+    fz = torch.full((n,), assist_mass * 9.81 * ratio, device=device, dtype=torch.float32)
+    if gated_by_height:
+        up = asset.data.root_link_pos_w[env_ids, 2] > stand_height
+        fz = torch.where(up, torch.zeros_like(fz), fz)
+
+    forces = torch.zeros(n, len(body_ids), 3, device=device, dtype=torch.float32)
+    forces[..., 2] = fz.unsqueeze(-1)
+    torques = torch.zeros_like(forces)
+    asset.set_external_force_and_torque(forces, torques, body_ids=body_ids, env_ids=env_ids, is_global=True)
+
+
 def reset_root_state_from_motion(
     env: BaseEnv,
     env_ids: torch.Tensor | None,
@@ -106,16 +185,22 @@ def reset_root_state_from_motion(
     pos_noise: float = 0.0,
     yaw_range: tuple[float, float] = (0.0, 0.0),
     velocity_scale: float = 1.0,
+    probability: float = 1.0,
 ):
     """把机器人重置到参考动作随机一帧的完整状态（根位姿/速度 + 关节位置/速度）。
 
     reset 分布与 AMP 参考动作一致，天然覆盖卧 / 半起身 / 已站起各阶段，不用手工枚举姿态。
     ``frame_range`` 取轨迹前段比例（``(0.0, 0.3)`` = 只抽刚摔倒那段）；``velocity_scale=0`` 则静止起手。
     关节用 ``qpos_mj`` / ``qvel_mj``（AMP 判别器看到的同一份顺序），按 ``env.dof_names`` 映射。
+    ``probability`` < 1 时只对随机抽中的 env 生效，其余保持前面 event 写的直立初值。
     """
     asset: Articulation = env.scene[asset_cfg.name]
     if env_ids is None:
         env_ids = torch.arange(asset.num_instances, device=asset.device)
+    if probability < 1.0:
+        env_ids = env_ids[torch.rand(len(env_ids), device=asset.device) < probability]
+        if len(env_ids) == 0:
+            return
     n, device = len(env_ids), asset.device
 
     # 参考帧首次调用拼好并常驻显存，之后每次 reset 只做一次索引

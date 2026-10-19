@@ -443,7 +443,7 @@ class HumaRobotSimRos(Node):
         LOCK = {"torso_yaw_joint": (500.0, 13.0, 75.0),
                 "torso_pitch_joint": (500.0, 13.0, 50.0),
                 "torso_roll_joint": (1160.0, 75.0, 50.0),
-                "wrist": (30.0, 2.0, 30.0),
+                "wrist": (1400.0, 15.0, 100.0),
                 "shoulder_pitch": (0.008 * _nf ** 2, 2 * _r * 0.008 * _nf, 50.0),
                 "shoulder_roll": (0.008 * _nf ** 2, 2 * _r * 0.008 * _nf, 50.0),
                 "shoulder_yaw": (0.004374 * _nf ** 2, 2 * _r * 0.004374 * _nf, 25.0),
@@ -486,7 +486,7 @@ class HumaRobotSimRos(Node):
         # ---- getup 任务：初始平躺倒地（其它任务保持原来的站立起手）----
         if 'getup' in str(param.get('exp_name', '')).lower():
             data.qpos[0:3] = [0.0, 0.0, 0.18]                     # base_link 离地 0.18m（躺着的高度）
-            data.qpos[3:7] = [0.70710678, 0.0, -0.70710678, 0.0]  # wxyz：绕 y -90°
+            data.qpos[3:7] = [0.70710678, 0.0, 0.70710678, 0.0]  # wxyz：绕 y -90°
             data.qvel[:] = 0.0
             mujoco.mj_forward(model, data)                        # 同步 sensor（get_obs 直接读 sensor）
             print(f"[INIT] 初始平躺倒地：root_z={data.qpos[2]:.3f}, quat(wxyz)={np.round(data.qpos[3:7], 3)}")

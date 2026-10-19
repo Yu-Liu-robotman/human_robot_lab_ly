@@ -32,7 +32,8 @@ class MoELayer(nn.Module):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.num_experts = num_experts
-        self.last_gate_weights: torch.Tensor | None = None
+
+        self.register_buffer("last_gate_weights", torch.zeros(0), persistent=False)
 
         self.experts = nn.ModuleList(
             [MLP(input_dim, output_dim, expert_hidden_dims, activation) for _ in range(num_experts)]
@@ -65,7 +66,8 @@ class MoELayer(nn.Module):
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         gate_weights = torch.softmax(self.gate(x), dim=-1)
         expert_outputs = torch.stack([expert(x) for expert in self.experts], dim=1)
-        output = torch.einsum("be,beo->bo", gate_weights, expert_outputs)
+        # 等价于 einsum("be,beo->bo")，但 einsum 在 ONNX opset 11 下不支持
+        output = (gate_weights.unsqueeze(-1) * expert_outputs).sum(dim=1)
         self.last_gate_weights = gate_weights
         if return_gate_weights:
             return output, gate_weights

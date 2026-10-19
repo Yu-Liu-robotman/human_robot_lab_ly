@@ -180,7 +180,10 @@ class BaseEnv(VecEnv):
         if len(env_ids) == 0:
             return
 
-        self.extras["log"] = dict()
+        # keep previously logged scalars: this used to do `extras["log"] = dict()`, which
+        # wiped every non-episode entry (e.g. mean_body_height, getup_assist/*) on any step
+        # where at least one env ended, i.e. on almost every step.
+        self.extras.setdefault("log", {})
         if self.cfg.scene.terrain_generator is not None:
             if self.cfg.scene.terrain_generator.curriculum:
                 terrain_levels = self.update_terrain_levels(env_ids)

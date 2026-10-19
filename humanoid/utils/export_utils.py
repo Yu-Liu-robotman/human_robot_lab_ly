@@ -208,7 +208,9 @@ def export_all(
     Returns:
         输出目录路径。
     """
-    from isaaclab_rl.rsl_rl import export_policy_as_jit, export_policy_as_onnx
+    # local exporter: it unwraps policy.student -> student.actor, which the
+    # isaaclab_rl one cannot do for MoE policies
+    from humanoid.utils.exporter import export_policy_as_jit, export_policy_as_onnx
 
     log_dir = log_dir or getattr(runner, "log_dir", None)
     if log_dir is None:
