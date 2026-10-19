@@ -156,7 +156,14 @@ def is_terminated(env: BaseEnv) -> torch.Tensor:
     return env.reset_buf * ~env.time_out_buf
 
 
-def feet_air_time_positive_biped(env: BaseEnv, threshold: float, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+def feet_air_time_positive_biped(
+    env: BaseEnv,
+    threshold: float,
+    sensor_cfg: SceneEntityCfg,
+    min_speed: float = 0.0,
+    max_speed: float = float("inf"),
+    speed_ramp: float = 0.1,
+) -> torch.Tensor:
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
     air_time = contact_sensor.data.current_air_time[:, sensor_cfg.body_ids]
     contact_time = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids]
@@ -165,11 +172,17 @@ def feet_air_time_positive_biped(env: BaseEnv, threshold: float, sensor_cfg: Sce
     single_stance = torch.sum(in_contact.int(), dim=1) == 1
     reward = torch.min(torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0), dim=1)[0]
     reward = torch.clamp(reward, max=threshold)
-    # no reward for zero command
-    reward *= (
-        torch.norm(env.command_generator.command[:, :2], dim=1) + torch.abs(env.command_generator.command[:, 2])
-    ) > 0.1
-    return reward
+
+    # 只在 [min_speed, max_speed] 指令段生效；边界用 speed_ramp 线性过渡
+    cmd = env.command_generator.command
+    total_cmd = torch.norm(cmd[:, :2], dim=1) + torch.abs(cmd[:, 2])
+    if speed_ramp <= 0.0:
+        gate = ((total_cmd >= min_speed) & (total_cmd <= max_speed)).float()
+    else:
+        lo = ((total_cmd - min_speed) / speed_ramp).clamp(0.0, 1.0)
+        hi = ((max_speed - total_cmd) / speed_ramp).clamp(0.0, 1.0)
+        gate = torch.minimum(lo, hi)
+    return reward * gate
 
 
 def feet_slide(

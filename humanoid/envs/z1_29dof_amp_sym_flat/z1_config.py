@@ -81,7 +81,7 @@ class Z129DOFRewardCfg(RewardCfg):
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
             "command_threshold": COMMAND_THRESHOLD,
-            "min_contact_time": 0.15,
+            "min_contact_time": 0.10,
         })
     # -------------------
 
@@ -95,7 +95,7 @@ class Z129DOFRewardCfg(RewardCfg):
             "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
             "stand_cmd": True,
         })
-    arm_swing_natural = RewTerm(func=z1_mdp.arm_swing_natural, weight=-1.0,
+    arm_swing_natural = RewTerm(func=z1_mdp.arm_swing_natural, weight=-0.5,
         params={
             "sh_cfg": SceneEntityCfg("robot", joint_names=["arm_left_shoulder_pitch_joint", "arm_right_shoulder_pitch_joint"], preserve_order=True),
             "hip_cfg": SceneEntityCfg("robot", joint_names=["leg_left_hip_pitch_joint", "leg_right_hip_pitch_joint"], preserve_order=True),
@@ -110,7 +110,7 @@ class Z129DOFRewardCfg(RewardCfg):
             "elbow_ratio": 0.2, "elbow_sign": 1.0, "elbow_vel_gain": 0.005,
             "command_threshold": COMMAND_THRESHOLD,
         })
-    arm_clear_body = RewTerm(func=z1_mdp.arm_clear_body, weight=-1.0,
+    arm_clear_body = RewTerm(func=z1_mdp.arm_clear_body, weight=-0.5,
         params={
             "asset_cfg": SceneEntityCfg("robot", preserve_order=True, joint_names=[
                 "arm_left_shoulder_roll_joint", "arm_right_shoulder_roll_joint",
@@ -119,22 +119,27 @@ class Z129DOFRewardCfg(RewardCfg):
             "roll_offset": 0.07, "roll_gain": 10.0,
             "elbow_deadband": 0.0, "elbow_vel_gain": 0.0,
         })
-
-    swing_foot_clearance = RewTerm(
-        func=z1_mdp.walk_swing_foot_clearance,
-        weight=-0.5,
+    
+    feet_air_time = RewTerm(
+        func=mdp.feet_air_time_positive_biped,
+        weight=1.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+            "threshold": 0.3,
+            "min_speed": 0.1,     # 站立/微指令不奖
+            "max_speed": 0.6,     # 0.6 m/s 以上不再奖"大步慢节奏"
+            "speed_ramp": 0.1,    # 0.5→0.6 线性淡出，0.1→0.2 线性淡入
+        },
+    )
+    feet_slide = RewTerm(
+        func=mdp.feet_slide,
+        weight=-1.0,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
-            "contact_height": 0.037,
-            "target_clearance": 0.072,
-            "minimum_air_time": 0.08,
-            "maximum_air_time": 0.40,
-            "minimum_support_time": 0.04,
-            "minimum_speed": COMMAND_THRESHOLD,
-            "maximum_forward_speed": 0.3,
         },
-    ) 
+    )
+
 @configclass
 class UpperBodyMotionCfg:
     """手臂（策略不控制的 14 个关节）随机大幅运动配置"""
