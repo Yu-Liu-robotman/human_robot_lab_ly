@@ -81,6 +81,27 @@ python humanoid/scripts/tools/retarget_robot_robot.py \
     --lock torso_pitch_joint=0.0 \
     --lock torso_yaw_joint=0.0 
 
+python humanoid/scripts/tools/retarget_robot_robot.py \
+    --source_data  /home/user/LY/tlibot_motion_data/engineai_robotics_description-master/amp/t800/data/walk_001_Skeleton9.src.csv \
+    --source_model /home/user/LY/tlibot_motion_data/engineai_robotics_description-master/t800/xml/serial_t800.xml \
+    --source_joint_names /home/user/LY/tlibot_motion_data/engineai_robotics_description-master/amp/t800/data/t800_joint_names.txt \
+    --source_fps 100 \
+    --scale 0.79 \
+    --target_csv   /home/user/LY/tlibot_description/T1Mini/csv/walk_001_Skeleton9.csv \
+    --target_description /home/user/LY/tlibot_description/T1Mini \
+    --target_variant l3 \
+    --target_model /home/user/LY/tlibot_description/T1Mini/t1mini_v1.0/mjcf/t1mini_23dof.xml \
+    --target_urdf /home/user/LY/tlibot_description/T1Mini/t1mini_v1.0/urdf/t1mini_23dof.urdf \
+    --target_joint_names /home/user/LY/tlibot_description/T1Mini/t1mini.py \
+    --joint_map /home/user/LY/tlibot_motion_data/engineai_robotics_description-master/amp/t800/data/t800_to_exbot.py \
+    --level_legs \
+    --stance_delta 0.03 \
+    --ground_target 0.038 \
+    --smooth_win 5 --clamp_limits \
+    --lock torso_roll_joint=0.0 \
+    --lock torso_pitch_joint=0.0 \
+    --lock torso_yaw_joint=0.0 
+
 2、GMR
 Demo:
 

@@ -529,6 +529,32 @@ def swing_foot_behind_penalty(
     return torch.sum(torch.clamp(behind, 0.0, 1.0) * swing.float(), dim=1) * gate
 
 
+def swing_foot_trailing_penalty(
+    env: BaseEnv,
+    asset_cfg: SceneEntityCfg,
+    vel_ref: float = 0.60,
+    swing_height_eps: float = 0.01,
+) -> torch.Tensor:
+    """约束摆动脚向后甩的速度：相对机身后退越快罚得越多，向前摆不罚。
+
+    只用「两脚高度差」区分摆动腿和支撑腿 —— 支撑腿相对机身本来就在后退，
+    不区分的话每一下支撑相都会被误罚。没有任何位置/高度门槛，也没有速度死区，
+    摆动腿只要在后移就线性计罚。
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    feet_w = asset.data.body_pos_w[:, asset_cfg.body_ids, :]         # (N, F, 3)
+    feet_v_w = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :]   # (N, F, 3)
+
+    fwd = math_utils.matrix_from_quat(asset.data.root_quat_w)[:, :, 0]   # 机身 x 轴 = 前方
+    vx_b = torch.sum(feet_v_w * fwd.unsqueeze(1), dim=-1)                # (N, F)，向前为正
+
+    foot_z = feet_w[..., 2]
+    swing = (foot_z > foot_z.min(dim=-1, keepdim=True)[0] + swing_height_eps).float()
+
+    back_vel = torch.clamp(-vx_b, min=0.0)                               # 只罚向后
+    return torch.sum(back_vel / max(vel_ref, 1e-6) * swing, dim=-1)
+
+
 def arm_swing_natural(
     env: BaseEnv,
     sh_cfg: SceneEntityCfg,          # joint_ids=[左肩 shoulder_pitch, 右肩 shoulder_pitch]
