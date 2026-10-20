@@ -15,9 +15,48 @@ def _get_export_actor(module):
 
 
 def _actor_input_dim(actor) -> int:
-    """MLP 是 Sequential（用 [0].in_features），MoELayer 直接有 input_dim。"""
+    """MLP 是 Sequential（用 [0].in_features），MoELayer / _VaeActor 直接有 input_dim。"""
     dim = getattr(actor, "input_dim", None)
     return int(dim) if dim is not None else int(actor[0].in_features)
+
+
+class _VaeActor(torch.nn.Module):
+    """把 VAE 前置拼进 actor，对外仍然只吃完整 actor 观测。
+
+    ActorCriticDreamWaQ 的 actor 输入是 ``cat([估计速度, latent, obs])``，单独导出
+    ``policy.actor`` 会得到 ``810 -> 829`` 的维度不匹配。
+
+    ``hist_obs`` 就是 actor 帧堆栈的最后 ``hist_obs_num`` 帧（同一份带噪声的
+    ``current_actor_obs``），所以图里直接切尾部就能拿到，部署侧不用多喂一路输入。
+    这里用均值而不是重采样，和 ``act_inference`` 一致。
+    """
+
+    def __init__(self, policy):
+        super().__init__()
+        self.vae = copy.deepcopy(policy.vae)
+        self.actor = copy.deepcopy(policy.actor)
+        self.hist_dim = int(self.vae.encoder[0].in_features)
+        self.input_dim = _actor_input_dim(self.actor) - int(self.vae.encode_mean_vel.out_features) - int(
+            self.vae.encode_mean_latent.out_features
+        )
+
+    def forward(self, x):
+        enc = self.vae.encoder(x[..., -self.hist_dim :])
+        vel = self.vae.encode_mean_vel(enc)
+        latent = self.vae.encode_mean_latent(enc)
+        return self.actor(torch.cat([vel, latent, x], dim=-1))
+
+
+def _export_actor_module(policy):
+    """挑出真正能单独前向的模块：MoE 蒸馏要拆一层，VAE 策略要把编码器打进去。"""
+    inner = getattr(policy, "actor", None)
+    if inner is None and hasattr(policy, "student"):
+        inner = _get_export_actor(policy.student)
+    if inner is None:
+        raise ValueError("Policy does not have an actor/student module.")
+    if getattr(policy, "vae", None) is not None:
+        return _VaeActor(policy)
+    return copy.deepcopy(inner)
 
 
 def export_policy_as_jit(policy: object, normalizer: Optional[object], path: str, filename="policy.pt"):
@@ -64,16 +103,9 @@ class _TorchPolicyExporter(torch.nn.Module):
         super().__init__()
         self.is_recurrent = policy.is_recurrent
         # copy policy parameters
-        if hasattr(policy, "actor"):
-            self.actor = copy.deepcopy(policy.actor)
-            if self.is_recurrent:
-                self.rnn = copy.deepcopy(policy.memory_a.rnn)
-        elif hasattr(policy, "student"):
-            self.actor = copy.deepcopy(_get_export_actor(policy.student))
-            if self.is_recurrent:
-                self.rnn = copy.deepcopy(policy.memory_s.rnn)
-        else:
-            raise ValueError("Policy does not have an actor/student module.")
+        self.actor = _export_actor_module(policy)
+        if self.is_recurrent:
+            self.rnn = copy.deepcopy(policy.memory_a.rnn if hasattr(policy, "actor") else policy.memory_s.rnn)
         # set up recurrent network
         if self.is_recurrent:
             self.rnn.cpu()
@@ -122,16 +154,9 @@ class _OnnxPolicyExporter(torch.nn.Module):
         self.verbose = verbose
         self.is_recurrent = policy.is_recurrent
         # copy policy parameters
-        if hasattr(policy, "actor"):
-            self.actor = copy.deepcopy(policy.actor)
-            if self.is_recurrent:
-                self.rnn = copy.deepcopy(policy.memory_a.rnn)
-        elif hasattr(policy, "student"):
-            self.actor = copy.deepcopy(_get_export_actor(policy.student))
-            if self.is_recurrent:
-                self.rnn = copy.deepcopy(policy.memory_s.rnn)
-        else:
-            raise ValueError("Policy does not have an actor/student module.")
+        self.actor = _export_actor_module(policy)
+        if self.is_recurrent:
+            self.rnn = copy.deepcopy(policy.memory_a.rnn if hasattr(policy, "actor") else policy.memory_s.rnn)
         # set up recurrent network
         if self.is_recurrent:
             self.rnn.cpu()

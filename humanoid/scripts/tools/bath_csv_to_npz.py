@@ -13,11 +13,12 @@ from isaaclab.app import AppLauncher
 
 """
 python3 humanoid/scripts/tools/bath_csv_to_npz.py \
-    --input_dir /home/user/LY/human_z1_lab/huma_robot_lab/humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/gmr/run_and_getup \
-    --output_dir /home/user/LY/human_z1_lab/huma_robot_lab/humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/run_and_getup \
+    --input_dir humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/gmr/new_csv1 \
+    --output_dir /home/user/LY/human_z1_lab/huma_robot_lab/humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof \
     --input_fps 30 \
     --output_fps 50 \
-    --robot z123dof
+    --robot z123dof \
+    --overwrite
 """
 
 parser = argparse.ArgumentParser(description="Batch replay motion csv files.")

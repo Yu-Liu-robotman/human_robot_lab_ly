@@ -22,7 +22,7 @@ csv 布局（**无表头**，逗号分隔）—— 权威来源 ``humanoid/scrip
 
     # 1) 左右镜像（默认 mode=left-right），输出 <stem>_mirrored.csv
     python humanoid/scripts/tools/mirror_gmr_csv.py \
-        /home/user/LY/human_z1_lab/huma_robot_lab/humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/gmr/run_and_getup/run2_subject1_left_segment_2150-2200.csv
+        /home/user/LY/tlibot_description/z1_v1.0/csv/walk_left_slow_001_Skeleton9_03.csv
 
     # 2) 整个目录批量
     python humanoid/scripts/tools/mirror_gmr_csv.py \

@@ -280,6 +280,13 @@ class BaseAgentCfg(RslRlOnPolicyRunnerCfg):
         pass
 
 
+@configclass
+class RslRlAmpVaeAlgorithmCfg(RslRlPpoAlgorithmCfg):
+    """AMPPPO with an optional DreamWaQ-style VAE; vae_cfg=None keeps plain AMPPPO."""
+
+    vae_cfg = None
+
+
 # Dual-teacher MoE distillation (DualPolicyDistillation) configurations
 @configclass
 class RslRlDualTeacherMoEStudentCfg:

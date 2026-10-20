@@ -25,6 +25,8 @@ class RolloutStorage:
             self.action_sigma = None
             self.hidden_states = None
             self.rnd_state = None
+            self.obs_hist = None
+            self.estimation = None
 
         def clear(self):
             self.__init__()
@@ -39,6 +41,8 @@ class RolloutStorage:
         actions_shape,
         rnd_state_shape=None,
         device="cpu",
+        obs_hist_shape=None,
+        estimation_shape=None,
     ):
         # store inputs
         self.training_type = training_type
@@ -49,6 +53,8 @@ class RolloutStorage:
         self.privileged_obs_shape = privileged_obs_shape
         self.rnd_state_shape = rnd_state_shape
         self.actions_shape = actions_shape
+        self.obs_hist_shape = obs_hist_shape
+        self.estimation_shape = estimation_shape
 
         # Core
         self.observations = torch.zeros(num_transitions_per_env, num_envs, *obs_shape, device=self.device)
@@ -58,6 +64,17 @@ class RolloutStorage:
             )
         else:
             self.privileged_observations = None
+        # for VAE (left unallocated when the shapes are None)
+        if obs_hist_shape is not None:
+            self.observation_history = torch.zeros(
+                num_transitions_per_env, num_envs, *obs_hist_shape, device=self.device
+            )
+        else:
+            self.observation_history = None
+        if estimation_shape is not None:
+            self.estimation = torch.zeros(num_transitions_per_env, num_envs, *estimation_shape, device=self.device)
+        else:
+            self.estimation = None
         self.rewards = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
         self.actions = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
         self.dones = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device).byte()
@@ -95,6 +112,10 @@ class RolloutStorage:
         self.observations[self.step].copy_(transition.observations)
         if self.privileged_observations is not None:
             self.privileged_observations[self.step].copy_(transition.privileged_observations)
+        # for VAE
+        if self.observation_history is not None:
+            self.observation_history[self.step].copy_(transition.obs_hist)
+            self.estimation[self.step].copy_(transition.estimation)
         self.actions[self.step].copy_(transition.actions)
         self.rewards[self.step].copy_(transition.rewards.view(-1, 1))
         self.dones[self.step].copy_(transition.dones.view(-1, 1))
@@ -241,6 +262,58 @@ class RolloutStorage:
                     None,
                     None,
                 ), None, rnd_state_batch
+
+    def vae_mini_batch_generator(self, num_mini_batches, num_epochs=8):
+        """Same as mini_batch_generator, plus (obs_hist, estimation, live) at the end."""
+        if self.training_type != "rl":
+            raise ValueError("This function is only available for reinforcement learning training.")
+        if self.observation_history is None:
+            raise ValueError("This storage was created without `obs_hist_shape`, cannot yield VAE samples.")
+        batch_size = self.num_envs * self.num_transitions_per_env
+        mini_batch_size = batch_size // num_mini_batches
+        indices = torch.randperm(num_mini_batches * mini_batch_size, requires_grad=False, device=self.device)
+
+        observations = self.observations.flatten(0, 1)
+        if self.privileged_observations is not None:
+            privileged_observations = self.privileged_observations.flatten(0, 1)
+        else:
+            privileged_observations = observations
+        # vae
+        obs_history = self.observation_history.flatten(0, 1)
+        estimation = self.estimation.flatten(0, 1)
+        dones = self.dones.flatten(0, 1)
+
+        actions = self.actions.flatten(0, 1)
+        values = self.values.flatten(0, 1)
+        returns = self.returns.flatten(0, 1)
+        old_actions_log_prob = self.actions_log_prob.flatten(0, 1)
+        advantages = self.advantages.flatten(0, 1)
+        old_mu = self.mu.flatten(0, 1)
+        old_sigma = self.sigma.flatten(0, 1)
+        rnd_state = self.rnd_state.flatten(0, 1) if self.rnd_state_shape is not None else None
+
+        for _ in range(num_epochs):
+            for i in range(num_mini_batches):
+                start = i * mini_batch_size
+                end = (i + 1) * mini_batch_size
+                batch_idx = indices[start:end]
+                yield (
+                    observations[batch_idx],
+                    privileged_observations[batch_idx],
+                    actions[batch_idx],
+                    values[batch_idx],
+                    advantages[batch_idx],
+                    returns[batch_idx],
+                    old_actions_log_prob[batch_idx],
+                    old_mu[batch_idx],
+                    old_sigma[batch_idx],
+                    (None, None),
+                    None,
+                    rnd_state[batch_idx] if rnd_state is not None else None,
+                    obs_history[batch_idx],
+                    estimation[batch_idx],
+                    1.0 - dones[batch_idx].float(),
+                )
 
     # for reinfrocement learning with recurrent networks
     def recurrent_mini_batch_generator(self, num_mini_batches, num_epochs=8):

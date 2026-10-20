@@ -89,7 +89,7 @@ class Z129DOFRewardCfg(RewardCfg):
         params={"asset_cfg": SceneEntityCfg("robot", body_names="torso_pitch_link"),
                 "tolerance": 0.05})      # 死区 ≈2.9°
     # add* 站立姿态优化 X
-    stand_still_joint_deviation_l1 = RewTerm(func=mdp.leglab_stand_still_joint_deviation_l1, weight=-1.5,
+    stand_still_joint_deviation_l1 = RewTerm(func=mdp.leglab_stand_still_joint_deviation_l1, weight=-2,
         params={
             "command_threshold": COMMAND_THRESHOLD,
             "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
@@ -103,9 +103,9 @@ class Z129DOFRewardCfg(RewardCfg):
             # 幅度 ≈ elbow_ratio * 肩摆幅 ≈ 0.2 * 0.75 ≈ 0.15 rad，离限位很远
             "elbow_cfg": SceneEntityCfg("robot", joint_names=["arm_left_elbow_joint", "arm_right_elbow_joint"], preserve_order=True),
             "swing_gain": 0.75,
-            "max_swing": 1.05,          # 向前侧上界(rad)
+            "max_swing": 1.35,          # 向前侧上界(rad)
             "max_swing_back": 0.35,     # 向后侧收紧
-            "swing_bias": -0.15,        # 摆臂中心再往前挪一点
+            "swing_bias": -0.20,        # 摆臂中心再往前挪一点
             "lead_time": 0.15, "smooth_alpha": 0.25, "arm_vel_gain": 0.02,
             "elbow_ratio": 0.2, "elbow_sign": 1.0, "elbow_vel_gain": 0.005,
             "command_threshold": COMMAND_THRESHOLD,
@@ -121,24 +121,33 @@ class Z129DOFRewardCfg(RewardCfg):
         })
     
     feet_air_time = RewTerm(
-        func=mdp.feet_air_time_positive_biped,
-        weight=1.0,
+        func=mdp.adaptive_feet_air_time_positive_biped,
+        weight=1.0,  # 1.0
         params={
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
-            "threshold": 0.3,
-            "min_speed": 0.1,     # 站立/微指令不奖
-            "max_speed": 0.6,     # 0.6 m/s 以上不再奖"大步慢节奏"
-            "speed_ramp": 0.1,    # 0.5→0.6 线性淡出，0.1→0.2 线性淡入
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+            "low_speed_threshold": 0.30, # 0.35
+            "high_speed_threshold": 0.12, # 0.6
+            "stand_cmd": True,
+            "command_threshold": COMMAND_THRESHOLD
         },
     )
     feet_slide = RewTerm(
         func=mdp.feet_slide,
-        weight=-1.0,
+        weight=-0.1,
         params={
             "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
         },
     )
+
+    feet_impact_vel = RewTerm(func=z1_mdp.feet_impact_vel, weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+            "height_scale": 0.04,          
+        })
+
+    hip_yaw_deviation = RewTerm(func=mdp.joint_deviation_l1, weight=-0.5,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*hip_yaw.*"])})
 
 @configclass
 class UpperBodyMotionCfg:
@@ -185,18 +194,18 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         self.robot.terminate_contacts_body_names = ["base_link"]
         self.robot.feet_body_names = [".*ankle_roll.*"]
         self.domain_rand.events.add_base_mass.params["asset_cfg"].body_names = ["base_link"]
-        self.commands.rel_standing_envs = 0.0
+        self.commands.rel_standing_envs = 0.2
         self.commands.resampling_time_range = (4.0, 10.0)
         self.commands.heading_command = False
         # (name, weight, lin_vel_x, lin_vel_y, ang_vel_z)
         self.commands.modes = [
-            CommandModeCfg(name="stand", weight=0.10, lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
+            CommandModeCfg(name="stand", weight=0.20, lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
             CommandModeCfg(name="forward", weight=0.30, lin_vel_x=(COMMAND_THRESHOLD, WALK_VX), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
             CommandModeCfg(name="backward", weight=0.10, lin_vel_x=(WALK_VX_BACK, -COMMAND_THRESHOLD), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
             CommandModeCfg(name="side", weight=0.10, lin_vel_x=(0.0, 0.0), lin_vel_y=(-WALK_VY, WALK_VY), ang_vel_z=(0.0, 0.0)),
             CommandModeCfg(name="turn", weight=0.10, lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(-WALK_WZ, WALK_WZ)),
             CommandModeCfg(name="walk_turn", weight=0.10, lin_vel_x=(COMMAND_THRESHOLD, WALK_VX), lin_vel_y=(0.0, 0.0), ang_vel_z=(-WALK_WZ, WALK_WZ)),
-            CommandModeCfg(name="run_forward", weight=0.20, lin_vel_x=(WALK_VX, 3.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
+            CommandModeCfg(name="run_forward", weight=0.10, lin_vel_x=(WALK_VX, 3.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
             # CommandModeCfg(name="run_turn", weight=0.20, lin_vel_x=(WALK_VX, 3.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(-WALK_WZ, WALK_WZ)),
         ]
         self.experiment_name = "z1_29dof_flat"
@@ -254,10 +263,16 @@ class Z129DOFAmpFlatAgentCfg(BaseAgentCfg):
     amp_task_reward_lerp = 0.5
     amp_motion_files = [
             # 前进 vx > 0
-            ("fwalk_slow", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_forward_02.txt"),
-            ("fwalk_slow", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_forward_04.txt"),
-            ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_0122-0268.txt"),
-            ("fwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/foward_segment_0478-0608.txt"),
+            ("fwalk_slow", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/walk_subject1_segment_0122-0268_07_s0.13.txt"),
+            ("fwalk_slow", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/walk_subject1_segment_0122-0268_07_s0.19.txt"),
+            ("fwalk_slow", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/walk_subject1_segment_0122-0268_07_s0.39.txt"),
+
+            ("fwalk_mid", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/walk_subject1_segment_0122-0268_07_s0.65.txt"),
+            ("fwalk_mid", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/walk_subject1_segment_0122-0268_07.txt"),
+                        
+            ("fwalk_fast", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/walk_subject1_segment_0122-0268_07_s1.04.txt"),
+            ("fwalk_fast", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/walk_subject1_segment_0122-0268_07_s1.30.txt"),
+
 
             # 后退 vx < 0
             # ("bwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_back_02.txt"),
@@ -286,12 +301,12 @@ class Z129DOFAmpFlatAgentCfg(BaseAgentCfg):
             # ("run_turn","humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/run_and_getup/txt/run2_subject1_right_segment_2150-2200_369.txt"),
             ("run","humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/run_and_getup/txt/run2_subject1_segment_1780-1808_312.txt"),
             ("run","humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/run_and_getup/txt/run2_subject1_segment_1863-1905_266.txt")
-
-    ]       
+    ]        
     amp_motion_cmd_ranges = {
         "stand": [((-COMMAND_THRESHOLD, COMMAND_THRESHOLD),(-COMMAND_THRESHOLD, COMMAND_THRESHOLD),(-COMMAND_THRESHOLD, COMMAND_THRESHOLD))],
         "fwalk_slow": [((0.1, 0.4), (0.0, 0.0), (0.0, 0.0))],
-        "fwalk": [((0.4, 1.2), (0.0, 0.0), (0.0, 0.0))],
+        "fwalk_mid": [((0.4, 0.7), (0.0, 0.0), (0.0, 0.0))],
+        "fwalk_fast": [((0.7, 1.2), (0.0, 0.0), (0.0, 0.0))],
         "bwalk": [((-2.0, -0.1), (0.0, 0.0), (0.0, 0.0))],
         "turn": [((0.0, 0.0), (0.0, 0.0), (0.1, WALK_WZ)), ((0.0, 0.0), (0.0, 0.0), (-WALK_WZ, -0.1))],
         "walk_turn": [((COMMAND_THRESHOLD, WALK_VX), (0.0, 0.0), (0.1, WALK_WZ)), ((COMMAND_THRESHOLD, WALK_VX), (0.0, 0.0), (-WALK_WZ, -0.1))],
@@ -310,6 +325,22 @@ class Z129DOFAmpFlatAgentCfg(BaseAgentCfg):
             mirror_loss_coeff=0.2,
             data_augmentation_func=z129dof_12dofamp.compute_symmetric_states,
         )
+@configclass
+class Z129DOFAmpVaeSymAgentCfg(Z129DOFAmpFlatAgentCfg):
+    """AMP + DreamWaQ 式 VAE，与 z1_29dof_23amp_sym_flat 做 A/B 对比"""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.experiment_name = "z1_29dof_23amp_vae_sym_flat"
+        self.wandb_project = "z1_29dof_23amp_vae_sym_flat"
+        self.neptune_project = "z1_29dof_23amp_vae_sym_flat"
+        self.policy.class_name = "ActorCriticDreamWaQ"
+        self.algorithm.class_name = "AMPVAEPPO"
+        self.algorithm.vae_cfg = {
+            "num_latent_dims": 0,      # 0 = 只做 3 维速度估计，不建 latent / decoder
+            "learning_rate": 1.0e-3,   # 只训 encoder + 速度头
+            "vel_weight": 1.0,
+        }
 
 # Getup-AMP
 # ---------------- Getup reward scales ----------------
@@ -553,7 +584,7 @@ python3 humanoid/scripts/fdsim2ros.py --experiment_name z1_29dof_dual_distill
 
 python3 humanoid/scripts/train.py --task z1_29dof_23amp_sym_flat --num_envs 4096 --headless
 python humanoid/scripts/train.py --task z1_29dof_dual_distill --num_envs 4096 --headless
-
+python humanoid/scripts/train.py --task z1_29dof_23amp_vae_sym_flat --num_envs 4096 --headless
 
 
 python3 humanoid/scripts/play.py  --task z1_29dof_dual_distill --num_envs 10

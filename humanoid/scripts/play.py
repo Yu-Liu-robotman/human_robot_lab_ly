@@ -118,7 +118,7 @@ def play():
     for i in tqdm(range(stop_state_log)):
 
         with torch.inference_mode():
-            if runner_class == DreamWaQAmpOnPolicyRunner:
+            if runner_class == DreamWaQAmpOnPolicyRunner or getattr(runner, "vae_cfg", None) is not None:
                 obs_history = infos["observations"].get("hist_obs")
                 actions = policy(obs, obs_history)
                 obs, _, _, infos = env.step(actions)

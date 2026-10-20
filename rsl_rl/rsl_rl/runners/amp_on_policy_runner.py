@@ -26,10 +26,11 @@ from collections import deque
 import torch
 
 import rsl_rl
-from rsl_rl.algorithms import AMPPPO
+from rsl_rl.algorithms import AMPPPO, AMPVAEPPO
 from rsl_rl.env import VecEnv
 from rsl_rl.modules import (
     ActorCritic,
+    ActorCriticDreamWaQ,
     ActorCriticRecurrent,
     Discriminator,
     EmpiricalNormalization,
@@ -59,7 +60,7 @@ class AmpOnPolicyRunner:
         self._configure_multi_gpu()
 
         # resolve training type depending on the algorithm
-        if self.alg_cfg["class_name"] in ["PPO", "AMPPPO"]:
+        if self.alg_cfg["class_name"] in ["PPO", "AMPPPO", "AMPVAEPPO"]:
             self.training_type = "rl"
         elif self.alg_cfg["class_name"] == "Distillation":
             self.training_type = "distillation"
@@ -88,11 +89,42 @@ class AmpOnPolicyRunner:
         else:
             num_privileged_obs = num_obs
 
+        # ---- optional VAE ----
+        self.vae_cfg = self.alg_cfg.get("vae_cfg")
+        if self.vae_cfg is not None:
+            _obs_hist = extras["observations"].get("hist_obs")
+            _vel_obs = extras["observations"].get("vel_obs")
+            if _obs_hist is None or _vel_obs is None:
+                raise ValueError(
+                    "vae_cfg is set but extras['observations'] has no 'hist_obs' / 'vel_obs'."
+                )
+            self.hist_obs_dim = int(_obs_hist.shape[1])
+            self.vel_obs_dim = int(_vel_obs.shape[1])
+            # the VAE decoder rebuilds the full actor observation (num_actor_obs)
+            self.vae_cfg["num_obs"] = int(num_obs)
+            self.vae_cfg.setdefault("num_latent_dims", 16)
+            self.vae_cfg.setdefault("num_explicit_dims", self.vel_obs_dim)
+        else:
+            self.hist_obs_dim = None
+            self.vel_obs_dim = None
+
         # evaluate the policy class
         policy_class = eval(self.policy_cfg.pop("class_name"))
-        policy: ActorCritic | ActorCriticRecurrent | StudentTeacher | StudentTeacherRecurrent = policy_class(
-            num_obs, num_privileged_obs, self.env.num_actions, **self.policy_cfg
-        ).to(self.device)
+        if self.vae_cfg is not None:
+            # VAE policies take (cenet_in_dim, num_latent_dims, num_explicit_dims) after num_actions
+            policy: ActorCritic | ActorCriticRecurrent | StudentTeacher | StudentTeacherRecurrent = policy_class(
+                num_obs,
+                num_privileged_obs,
+                self.env.num_actions,
+                self.hist_obs_dim,
+                int(self.vae_cfg["num_latent_dims"]),
+                int(self.vae_cfg["num_explicit_dims"]),
+                **self.policy_cfg,
+            ).to(self.device)
+        else:
+            policy = policy_class(num_obs, num_privileged_obs, self.env.num_actions, **self.policy_cfg).to(
+                self.device
+            )
 
         # resolve dimension of rnd gated state
         if "rnd_cfg" in self.alg_cfg and self.alg_cfg["rnd_cfg"] is not None:
@@ -190,6 +222,12 @@ class AmpOnPolicyRunner:
             self.privileged_obs_normalizer = torch.nn.Identity().to(self.device)  # no normalization
 
         # init storage and model
+        # plain AMPPPO.init_storage() has no VAE shapes, so only pass them when enabled
+        _vae_shapes = (
+            {"obs_hist_shape": [self.hist_obs_dim], "estimation_shape": [self.vel_obs_dim]}
+            if self.vae_cfg is not None
+            else {}
+        )
         self.alg.init_storage(
             self.training_type,
             self.env.num_envs,
@@ -197,6 +235,7 @@ class AmpOnPolicyRunner:
             [num_obs],
             [num_privileged_obs],
             [self.env.num_actions],
+            **_vae_shapes,
         )
 
         # Decide whether to disable logging
@@ -249,6 +288,9 @@ class AmpOnPolicyRunner:
         privileged_obs = extras["observations"].get(self.privileged_obs_type, obs)
         amp_obs = self.env.get_amp_obs_for_expert_trans()
         obs, privileged_obs, amp_obs = obs.to(self.device), privileged_obs.to(self.device), amp_obs.to(self.device)
+        if self.vae_cfg is not None:
+            obs_hist = extras["observations"]["hist_obs"].to(self.device)
+            vel_obs = extras["observations"]["vel_obs"].to(self.device)
         self.train_mode()  # switch to train mode (for dropout for example)
 
         # AMP 多帧窗口：每个 env 保存最近 (num_frames-1) 帧，用于拼出 [..., s_t, s_{t+1}]。
@@ -285,7 +327,10 @@ class AmpOnPolicyRunner:
             with torch.inference_mode():
                 for _ in range(self.num_steps_per_env):
                     # Sample actions
-                    actions = self.alg.act(obs, privileged_obs, amp_obs)
+                    if self.vae_cfg is not None:
+                        actions = self.alg.act(obs, privileged_obs, amp_obs, obs_hist, vel_obs)
+                    else:
+                        actions = self.alg.act(obs, privileged_obs, amp_obs)
                     # Step the environment
                     obs, rewards, dones, infos = self.env.step(actions.to(self.env.device))
                     # AMP：优先取 env 在 reset 之前缓存的「本控制步结束时刻」的一致帧作为 s_{t+1}；
@@ -301,6 +346,9 @@ class AmpOnPolicyRunner:
                     )
                     # perform normalization
                     obs = self.obs_normalizer(obs)
+                    if self.vae_cfg is not None:
+                        obs_hist = infos["observations"]["hist_obs"].to(self.device)
+                        vel_obs = infos["observations"]["vel_obs"].to(self.device)
                     if self.privileged_obs_type is not None:
                         privileged_obs = self.privileged_obs_normalizer(
                             infos["observations"][self.privileged_obs_type].to(self.device)
@@ -578,6 +626,12 @@ class AmpOnPolicyRunner:
         self.eval_mode()  # switch to evaluation mode (dropout for example)
         if device is not None:
             self.alg.policy.to(device)
+        if self.vae_cfg is not None:
+            if device is not None:
+                self.obs_normalizer.to(device)
+            if self.cfg["empirical_normalization"]:
+                return lambda obs, obs_hist: self.alg.policy.act_inference(self.obs_normalizer(obs), obs_hist)
+            return lambda obs, obs_hist: self.alg.policy.act_inference(obs, obs_hist)
         policy = self.alg.policy.act_inference
         if self.cfg["empirical_normalization"]:
             if device is not None:

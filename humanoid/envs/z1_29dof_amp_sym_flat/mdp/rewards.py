@@ -248,7 +248,6 @@ def feet_lateral_placement_penalty(
     midline_tolerance: float = 0.02,
     splay_gain: float = 4.0,
     command_threshold: float = 0.1,
-    include_turning: bool = False,
 ) -> torch.Tensor:
     """约束落脚点侧向位置：中点贴机身中线 + 站宽接近 target_gap + 站宽不超 max_gap。"""
     asset: Articulation = env.scene[asset_cfg.name]
@@ -269,12 +268,14 @@ def feet_lateral_placement_penalty(
     cost = torch.relu(midline_err - midline_tolerance) + gap_lo + gap_hi + splay_gain * splay
 
     command = env.command_generator.command
-    gate = (torch.abs(command[:, 1]) <= command_threshold).float()
-    if not include_turning:
-        turning = (torch.abs(command[:, 2]) > command_threshold) & (
-            torch.linalg.vector_norm(command[:, :2], dim=1) <= command_threshold
-        )
-        gate = gate * (~turning).float()
+    vx, vy, wz = command[:, 0], command[:, 1], command[:, 2]
+    th = command_threshold
+    # 只在「站立」和「纯前进」时生效；后退/横移/原地转/边走边转 一律关掉
+    quiet_xy = (torch.abs(vx) <= th) & (torch.abs(vy) <= th)
+    stand = quiet_xy & (torch.abs(wz) <= th)
+    forward = (vx > th) & quiet_xy & (torch.abs(wz) <= th)
+    gate = (stand | forward).float()
+    
     return cost * gate
 
 def feet_flat_landing_penalty(
@@ -323,13 +324,21 @@ def feet_impact_vel(
     env: BaseEnv,
     asset_cfg: SceneEntityCfg,
     height_scale: float = 0.04,
+    use_terrain: bool = True,
 ) -> torch.Tensor:
-    """惩罚「接近地面时的下落速度」—— 不限工况，任何指令下都要求软着陆"""
+
     asset: Articulation = env.scene[asset_cfg.name]
     foot_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]         # (N, F)
     foot_vz = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, 2]    # (N, F)
 
-    height = foot_z - torch.min(foot_z, dim=-1, keepdim=True)[0]
+    terrain_h = getattr(env, "terrain_height_at_feet", None)
+    scanner_on = getattr(env.cfg.scene.height_scanner, "enable_height_scan", False)
+    if use_terrain and terrain_h is not None and scanner_on:
+        ground_z = terrain_h                                          # (N, F)
+    else:
+        ground_z = torch.min(foot_z, dim=-1, keepdim=True)[0]
+    height = torch.clamp(foot_z - ground_z, min=0.0)                  # 夹掉「脚在地形以下」
+
     proximity = torch.exp(-height / max(height_scale, 1e-6))
     approach = torch.clamp(-foot_vz, min=0.0)                        # 只罚向下
 
