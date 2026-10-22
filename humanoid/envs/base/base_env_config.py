@@ -273,7 +273,7 @@ class BaseAgentCfg(RslRlOnPolicyRunnerCfg):
     # AMP
     amp_num_preload_transitions = 5000
     amp_dynamic_expert_sampling = True
-    amp_num_frames = 5
+    amp_num_frames = 6
     amp_discr_hidden_dims = [1024, 512]
 
     def __post_init__(self):
@@ -285,6 +285,12 @@ class RslRlAmpVaeAlgorithmCfg(RslRlPpoAlgorithmCfg):
     """AMPPPO with an optional DreamWaQ-style VAE; vae_cfg=None keeps plain AMPPPO."""
 
     vae_cfg = None
+    # 可选的「风格价值」第二 critic：把 AMP style reward 单独走一条价值流，
+    # 让任务优势和风格优势各自归一化，避免两者的尺度被混在一个 advantage 里。
+    style_critic: bool = False
+    style_critic_coef: float = 0.5   # 风格 surrogate 在总 loss 里的权重
+    style_value_coef: float = 0.5    # 风格 value loss 的权重
+    style_lam: float = 0.0           # 风格 advantage 的 GAE lambda（即时奖励用 0）
 
 
 # Dual-teacher MoE distillation (DualPolicyDistillation) configurations

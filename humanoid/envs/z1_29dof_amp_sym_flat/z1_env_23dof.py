@@ -962,7 +962,7 @@ class Z1AmpSymEnv29DOF(BaseEnv):
                 joint_vel,
                 root_ori,
                 # root_lin_vel_b,
-                root_ang_vel_b,
+                # root_ang_vel_b,
                 tgt_robot_body_pos_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
                 # tgt_robot_body_ori_b.reshape(tgt_robot_body_pos_b.shape[0], -1),
                 # tgt_body_lin_vel_b.reshape(tgt_robot_body_pos_b.shape[0], -1),

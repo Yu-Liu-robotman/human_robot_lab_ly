@@ -198,7 +198,8 @@ class AMPPPO:
         self.amp_transition.observations = amp_obs
         return self.transition.actions
 
-    def process_env_step(self, rewards, dones, infos, amp_obs, amp_label=None):
+    def process_env_step(self, rewards, dones, infos, amp_obs, amp_label=None, style_reward=None, task_reward=None):
+        # style_reward / task_reward 只给 AMPVAEPPO 的双价值流用，这里忽略
         # Record the rewards and dones
         # Note: we clone here because later on we bootstrap the rewards based on timeouts
         self.transition.rewards = rewards.clone()
@@ -312,7 +313,7 @@ class AMPPPO:
                 hid_states_batch,
                 masks_batch,
                 rnd_state_batch,
-            ) = sample
+            ) = sample[:12]
 
             # number of augmentations per sample
             # we start with 1 and increase it if we use symmetry augmentation

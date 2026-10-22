@@ -29,7 +29,7 @@ from rsl_rl.modules.rnd import RandomNetworkDistillation
 from rsl_rl.storage import ReplayBuffer, RolloutStorage
 from rsl_rl.utils import string_to_callable
 
-DISC_LEARNING_RATE = 2.0e-4 
+DISC_LEARNING_RATE = 5.0e-4 
 DISC_MAX_GRAD_NORM = 1.0
 
 
@@ -68,6 +68,11 @@ class AMPVAEPPO:
         # Distributed training parameters
         multi_gpu_cfg: dict | None = None,
         vae_cfg: dict | None = None,
+        # style (AMP) value stream: a second critic that only sees the discriminator reward
+        style_critic: bool = False,
+        style_critic_coef: float = 0.5,
+        style_value_coef: float = 0.5,
+        style_lam: float = 0.0,
     ):
         # device-related parameters
         self.device = device
@@ -192,6 +197,18 @@ class AMPVAEPPO:
         self.learning_rate = learning_rate
         self.normalize_advantage_per_mini_batch = normalize_advantage_per_mini_batch
 
+        # ---- optional separate style value stream ----
+        self.style_critic = bool(style_critic) and hasattr(policy, "evaluate_style")
+        if style_critic and not self.style_critic:
+            raise ValueError(
+                "style_critic=True but the policy has no `evaluate_style`; "
+                "use a policy that defines a second value head."
+            )
+        # Eq.(6) advantage weight w_style (not a loss coefficient)
+        self.style_critic_coef = float(style_critic_coef)
+        self.style_value_coef = float(style_value_coef)
+        self.style_lam = float(style_lam)
+
     def init_storage(
         self,
         training_type,
@@ -220,6 +237,7 @@ class AMPVAEPPO:
             self.device,
             obs_hist_shape=obs_hist_shape if self.vae_enabled else None,
             estimation_shape=estimation_shape if self.vae_enabled else None,
+            style_critic=self.style_critic,
         )
 
     def act(self, obs, critic_obs, amp_obs, obs_hist=None, estimation=None):
@@ -233,6 +251,8 @@ class AMPVAEPPO:
         else:
             self.transition.actions = self.policy.act(obs).detach()
         self.transition.values = self.policy.evaluate(critic_obs).detach()
+        if self.style_critic:
+            self.transition.style_values = self.policy.evaluate_style(critic_obs).detach()
         self.transition.actions_log_prob = self.policy.get_actions_log_prob(self.transition.actions).detach()
         self.transition.action_mean = self.policy.action_mean.detach()
         self.transition.action_sigma = self.policy.action_std.detach()
@@ -242,10 +262,22 @@ class AMPVAEPPO:
         self.amp_transition.observations = amp_obs
         return self.transition.actions
 
-    def process_env_step(self, rewards, dones, infos, amp_obs, amp_label=None):
-        # Record the rewards and dones
-        # Note: we clone here because later on we bootstrap the rewards based on timeouts
-        self.transition.rewards = rewards.clone()
+    def process_env_step(self, rewards, dones, infos, amp_obs, amp_label=None, style_reward=None, task_reward=None):
+        # 两条价值流必须彻底分开：
+        #   task 流 ← 纯任务奖励（不含 style）
+        #   style 流 ← 纯判别器风格奖励
+        # rewards 是插值后的混合奖励 ((1-lerp)*style + lerp*task)，若直接喂给 task 流，
+        # style 会被算两遍，task 的有效权重会被压到 lerp*(1-style_critic_coef)。
+        if self.style_critic:
+            if style_reward is None or task_reward is None:
+                raise ValueError(
+                    "style_critic=True 需要同时传入 style_reward 和 task_reward"
+                    "（检查 amp_task_reward_lerp 是否 > 0）。"
+                )
+            self.transition.rewards = task_reward.clone()
+            self.transition.style_rewards = style_reward.clone()
+        else:
+            self.transition.rewards = rewards.clone()
         self.transition.dones = dones
 
         # Compute the intrinsic rewards and add to extrinsic rewards
@@ -262,9 +294,15 @@ class AMPVAEPPO:
 
         # Bootstrapping on time outs
         if "time_outs" in infos:
+            _time_out_mask = infos["time_outs"].unsqueeze(1).to(self.device)
             self.transition.rewards += self.gamma * torch.squeeze(
-                self.transition.values * infos["time_outs"].unsqueeze(1).to(self.device), 1
+                self.transition.values * _time_out_mask, 1
             )
+            # style 流也要 bootstrap，否则两条价值流的截断偏置不对称
+            if self.style_critic:
+                self.transition.style_rewards += self.gamma * torch.squeeze(
+                    self.transition.style_values * _time_out_mask, 1
+                )
 
         # record the transition
         if amp_obs.dim() == 3:
@@ -278,8 +316,17 @@ class AMPVAEPPO:
     def compute_returns(self, last_critic_obs):
         # compute value for the last step
         last_values = self.policy.evaluate(last_critic_obs).detach()
+        last_style_values = None
+        if self.style_critic:
+            last_style_values = self.policy.evaluate_style(last_critic_obs).detach()
         self.storage.compute_returns(
-            last_values, self.gamma, self.lam, normalize_advantage=not self.normalize_advantage_per_mini_batch
+            last_values,
+            self.gamma,
+            self.lam,
+            # normalized per minibatch in update()
+            normalize_advantage=False,
+            last_style_values=last_style_values,
+            style_lam=self.style_lam,
         )
 
     def _split_amp_window(self, window):
@@ -297,9 +344,24 @@ class AMPVAEPPO:
         return flat.reshape(b, n, d)
 
     def update(self):  # noqa: C901
+        def _ppo_surrogate(adv, ratio):
+            s = -torch.squeeze(adv) * ratio
+            sc = -torch.squeeze(adv) * torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param)
+            return torch.max(s, sc).mean()
+
+        def _value_loss(v, ret, tgt):
+            if self.use_clipped_value_loss:
+                v_clipped = tgt + (v - tgt).clamp(-self.clip_param, self.clip_param)
+                return torch.max((v - ret).pow(2), (v_clipped - ret).pow(2)).mean()
+            return (ret - v).pow(2).mean()
+
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy = 0
+        if self.style_critic:
+            mean_style_value_loss = 0
+        else:
+            mean_style_value_loss = None
         mean_amp_loss = 0
         mean_grad_pen_loss = 0
         mean_policy_pred = 0
@@ -372,6 +434,9 @@ class AMPVAEPPO:
             ) = sample[:12]
             if self.vae_enabled:
                 obs_hist_batch, estimation_batch, live_batch = sample[12], sample[13], sample[14]
+            style_advantages_batch = None
+            if self.style_critic:
+                style_advantages_batch, style_returns_batch, style_values_batch = sample[15], sample[16], sample[17]
 
             # number of augmentations per sample
             # we start with 1 and increase it if we use symmetry augmentation
@@ -390,10 +455,6 @@ class AMPVAEPPO:
             else:
                 has_expert = True
                 expert_label = None
-            # check if we should normalize advantages per mini batch
-            if self.normalize_advantage_per_mini_batch:
-                with torch.no_grad():
-                    advantages_batch = (advantages_batch - advantages_batch.mean()) / (advantages_batch.std() + 1e-8)
 
             # Perform symmetric augmentation
             if self.symmetry and self.symmetry["use_data_augmentation"]:
@@ -419,6 +480,10 @@ class AMPVAEPPO:
                 target_values_batch = target_values_batch.repeat(num_aug, 1)
                 advantages_batch = advantages_batch.repeat(num_aug, 1)
                 returns_batch = returns_batch.repeat(num_aug, 1)
+                if self.style_critic:
+                    style_values_batch = style_values_batch.repeat(num_aug, 1)
+                    style_returns_batch = style_returns_batch.repeat(num_aug, 1)
+                    style_advantages_batch = style_advantages_batch.repeat(num_aug, 1)
 
             # Recompute actions log prob and entropy for current batch of transitions
             # Note: we need to do this because we updated the policy with the new parameters
@@ -473,26 +538,29 @@ class AMPVAEPPO:
                     for param_group in self.optimizer.param_groups:
                         param_group["lr"] = self.learning_rate
 
-            # Surrogate loss
+            # Eq.(6): per-group minibatch normalization, then weighted sum
+            def _norm_adv(a):
+                a = a.reshape(-1, 1) if a.dim() == 1 else a
+                return (a - a.mean()) / (a.std() + 1e-8)
+
+            mixed_adv = _norm_adv(advantages_batch)
+            if self.style_critic:
+                mixed_adv = mixed_adv + self.style_critic_coef * _norm_adv(style_advantages_batch)
+
+            # Eq.(7): single clipped surrogate
             ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
-            surrogate = -torch.squeeze(advantages_batch) * ratio
-            surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(
-                ratio, 1.0 - self.clip_param, 1.0 + self.clip_param
-            )
-            surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
+            surrogate_loss = _ppo_surrogate(mixed_adv, ratio)
 
             # Value function loss
-            if self.use_clipped_value_loss:
-                value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(
-                    -self.clip_param, self.clip_param
-                )
-                value_losses = (value_batch - returns_batch).pow(2)
-                value_losses_clipped = (value_clipped - returns_batch).pow(2)
-                value_loss = torch.max(value_losses, value_losses_clipped).mean()
-            else:
-                value_loss = (returns_batch - value_batch).pow(2).mean()
+            value_loss = _value_loss(value_batch, returns_batch, target_values_batch)
+            style_value_loss = None
+            if self.style_critic:
+                style_value_batch = self.policy.evaluate_style(critic_obs_batch)
+                style_value_loss = _value_loss(style_value_batch, style_returns_batch, style_values_batch)
 
             loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
+            if self.style_critic:
+                loss = loss + self.style_value_coef * style_value_loss
 
             # Symmetry loss
             if self.symmetry:
@@ -633,6 +701,8 @@ class AMPVAEPPO:
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
             mean_entropy += entropy_batch.mean().item()
+            if self.style_critic:
+                mean_style_value_loss += style_value_loss.item()
             if has_expert:
                 mean_amp_loss += amp_loss.item()
                 mean_grad_pen_loss += grad_pen_loss.item()
@@ -656,6 +726,8 @@ class AMPVAEPPO:
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy /= num_updates
+        if self.style_critic:
+            mean_style_value_loss /= num_updates
         # -- For RND
         if mean_rnd_loss is not None:
             mean_rnd_loss /= num_updates
@@ -691,6 +763,8 @@ class AMPVAEPPO:
             if self.vae_latent_dim > 0:
                 loss_dict["vae_recon"] = mean_vae_recon_loss
                 loss_dict["vae_kl"] = mean_vae_kl_loss
+        if self.style_critic:
+            loss_dict["style_value"] = mean_style_value_loss
         if self.rnd:
             loss_dict["rnd"] = mean_rnd_loss
         if self.symmetry:

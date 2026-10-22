@@ -17,9 +17,8 @@ python3 humanoid/scripts/fdsim2ros.py --experiment_name z1_29dof_amp_sym_flat --
 #   跑起来后 按【空格】开始录 -> 再按【空格】结束并立即存成 time1.csv
 #   再按【空格】->【空格】存成 time2.csv，以此类推
 python humanoid/scripts/fdsim2ros.py \
-  --experiment_name z1_29dof_amp_sym_flat \
-  --load_run 2026-09-28_09-52-41 \
-  --record humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/gmr/csv4 \
+  --experiment_name z1_29dof_23amp_vae_sym_flat \
+  --record humanoid/scripts/sim2sim_record_motion \
   --record_robot z123dof --record_fps 50 --record_delay 2.0
 
 """
@@ -135,7 +134,7 @@ def keyboard_control(key):
     if key == 'f':
         global stand_flag
         stand_flag *= -1
-    print(cmd.vx, cmd.vy, cmd.dyaw)
+    # print(cmd.vx, cmd.vy, cmd.dyaw)
 
 
 def load_joint_sdk_names(robot_key):
@@ -341,13 +340,13 @@ class HumaRobotSimRos(Node):
         mujoco.mj_step(model, data)
         n_joints = model.njnt
         mj_joint_num = model.njnt - 1
-        print(mj_joint_num)
+        # print(mj_joint_num)
         joint_names = []
         for i in range(n_joints):
             # 获取关节名称
             joint_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i)
             # 打印关节名称
-            print(f'关节 {i}: {joint_name}\r')
+            # print(f'关节 {i}: {joint_name}\r')
             if i > 0:
                 joint_names.append(joint_name)
         name_map = {
@@ -478,8 +477,8 @@ class HumaRobotSimRos(Node):
         self.all_default_joint_pos[idx] = param["default_joint_pos"]
 
         locked = [nm for nm in joint_names if nm not in set(dof_names)]
-        print(f"受控 {len(dof_names)} 个: {dof_names}")
-        print(f"锁死 {len(locked)} 个: {locked}")
+        # print(f"受控 {len(dof_names)} 个: {dof_names}")
+        # print(f"锁死 {len(locked)} 个: {locked}")
 
         qpos_adr = np.array([model.jnt_qposadr[i] for i in range(1, model.njnt)], dtype=np.int64)
 
@@ -573,11 +572,11 @@ class HumaRobotSimRos(Node):
         pd_kps = np.array(kps, dtype=np.double)
         pd_kds = np.array(kds, dtype=np.double)
         tau_limit = np.array(tau_limit, dtype=np.double)
-        print("self.pd_kps:", pd_kps)
-        print("self.pd_kds:", pd_kds)
-        print("self.tau_limit:", tau_limit)
-        print(param["exp_name"])
-        print(param["exp_time"])
+        # print("self.pd_kps:", pd_kps)
+        # print("self.pd_kds:", pd_kds)
+        # print("self.tau_limit:", tau_limit)
+        # print(param["exp_name"])
+        # print(param["exp_time"])
         with Timer(f'[INFO]: Time taken for {cfg.sim_config.sim_duration:.2f}s simulation\r'):
             for _ in range(int(cfg.sim_config.sim_duration / cfg.sim_config.dt)):
                 if not viewer.is_running():
@@ -594,8 +593,8 @@ class HumaRobotSimRos(Node):
                 force[:6] = force_sensor
                 # 1000hz -> 100hz
                 if count_lowlevel % cfg.sim_config.decimation == 0:
-                    print("current command: lin vel x={:.2f}, lin vel y={:.2f}, ang vel z={:.2f}, stand_flag={:.2f}".format(cmd.vx, cmd.vy, cmd.dyaw, stand_flag))  
-                    print("current velocity: lin vel x={:.2f}, lin vel y={:.2f}, ang vel z={:.2f}".format(v[0], v[1], omega[2]))
+                    # print("current command: lin vel x={:.2f}, lin vel y={:.2f}, ang vel z={:.2f}, stand_flag={:.2f}".format(cmd.vx, cmd.vy, cmd.dyaw, stand_flag))  
+                    # print("current velocity: lin vel x={:.2f}, lin vel y={:.2f}, ang vel z={:.2f}".format(v[0], v[1], omega[2]))
                     target_q = self.rl_policy_forward(param=param, policy=policy, q=(a_q-self.default_joint_pos), dq=a_dq, waist_orient_quat=quat,
                                                       waist_omega=omega, torque_foot=force, force_foot=force_foot,
                                                       lin_vel=lin_vel)
@@ -753,7 +752,7 @@ class HumaRobotSimRos(Node):
         eu_ang = quaternion_to_euler_array(waist_orient_quat)
         eu_ang[eu_ang > math.pi] -= 2 * math.pi
         # eu_ang = eu_ang #- np.array([0.01, -0.09, 0.17])
-        print("waist_orient_quat:", eu_ang)
+        # print("waist_orient_quat:", eu_ang)
         eu_ang = self.euler_apply_inverse(eu_ang, np.array([0, 0, -1]))
         clk_a, clk_b, phase = self.gen_rl_clock()
         global stand_flag

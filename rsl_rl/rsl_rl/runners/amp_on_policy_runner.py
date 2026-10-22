@@ -364,7 +364,7 @@ class AmpOnPolicyRunner:
                     if getattr(self.amp_data, "num_labels", 0) > 0:
                         _amp_label = self.amp_data.cmd_label_onehot(self.env.command_generator.command).to(self.device)
 
-                    rewards, amp_d, step_style_reward = self.alg.discriminator.predict_style_reward(
+                    rewards, amp_d, step_style_reward, step_task_reward = self.alg.discriminator.predict_style_reward(
                         amp_window, rewards, normalizer=self.alg.amp_normalizer, label=_amp_label
                     )
 
@@ -382,7 +382,15 @@ class AmpOnPolicyRunner:
                         )
 
                     amp_obs = next_amp_obs
-                    self.alg.process_env_step(rewards, dones, infos, amp_window, amp_label=_amp_label)
+                    self.alg.process_env_step(
+                        rewards,
+                        dones,
+                        infos,
+                        amp_window,
+                        amp_label=_amp_label,
+                        style_reward=step_style_reward,
+                        task_reward=step_task_reward,
+                    )
 
                     # Extract intrinsic rewards (only for logging)
                     intrinsic_rewards = self.alg.intrinsic_rewards if self.alg.rnd else None

@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import torch
 import torch.nn as nn
 from torch.distributions import Normal
@@ -63,6 +65,15 @@ class ActorCriticDreamWaQ(nn.Module):
                 critic_layers.append(nn.Linear(critic_hidden_dims[layer_index], critic_hidden_dims[layer_index + 1]))
                 critic_layers.append(activation)
         self.critic = nn.Sequential(*critic_layers)
+
+        # 风格价值（AMP style reward 专用）。与任务价值完全独立，互不共享参数，
+        # 这样两条奖励流的 advantage 可以各自归一化。
+        # deepcopy 会连已初始化的权重一起复制，必须 reset_parameters 重新初始化，
+        # 否则两个 critic 起始完全相同，独立性就没有了。
+        self.critic_style = nn.Sequential(*copy.deepcopy(critic_layers))
+        for _m in self.critic_style.modules():
+            if isinstance(_m, nn.Linear):
+                _m.reset_parameters()
 
         # VAE 模块
         self.vae=VAE(cenet_in_dim = cenet_in_dim, 
@@ -147,6 +158,9 @@ class ActorCriticDreamWaQ(nn.Module):
     def evaluate(self, critic_observations, **kwargs):
         value = self.critic(critic_observations)
         return value
+
+    def evaluate_style(self, critic_observations, **kwargs):
+        return self.critic_style(critic_observations)
 
     def load_state_dict(self, state_dict, strict=True):
         """Load the parameters of the actor-critic model.

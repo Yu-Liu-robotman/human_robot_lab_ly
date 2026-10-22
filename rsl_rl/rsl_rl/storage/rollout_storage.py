@@ -27,6 +27,8 @@ class RolloutStorage:
             self.rnd_state = None
             self.obs_hist = None
             self.estimation = None
+            self.style_values = None
+            self.style_rewards = None
 
         def clear(self):
             self.__init__()
@@ -43,6 +45,7 @@ class RolloutStorage:
         device="cpu",
         obs_hist_shape=None,
         estimation_shape=None,
+        style_critic: bool = False,
     ):
         # store inputs
         self.training_type = training_type
@@ -55,6 +58,7 @@ class RolloutStorage:
         self.actions_shape = actions_shape
         self.obs_hist_shape = obs_hist_shape
         self.estimation_shape = estimation_shape
+        self.style_critic = bool(style_critic)
 
         # Core
         self.observations = torch.zeros(num_transitions_per_env, num_envs, *obs_shape, device=self.device)
@@ -91,6 +95,18 @@ class RolloutStorage:
             self.sigma = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
             self.returns = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
             self.advantages = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
+
+        # optional style (AMP) value stream, independent of the task value stream
+        if self.style_critic:
+            self.style_values = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
+            self.style_rewards = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
+            self.style_returns = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
+            self.style_advantages = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
+        else:
+            self.style_values = None
+            self.style_rewards = None
+            self.style_returns = None
+            self.style_advantages = None
 
         # For RND
         if rnd_state_shape is not None:
@@ -131,6 +147,11 @@ class RolloutStorage:
             self.mu[self.step].copy_(transition.action_mean)
             self.sigma[self.step].copy_(transition.action_sigma)
 
+        # optional style value stream
+        if self.style_values is not None:
+            self.style_values[self.step].copy_(transition.style_values)
+            self.style_rewards[self.step].copy_(transition.style_rewards.view(-1, 1))
+
         # For RND
         if self.rnd_state_shape is not None:
             self.rnd_state[self.step].copy_(transition.rnd_state)
@@ -163,29 +184,50 @@ class RolloutStorage:
     def clear(self):
         self.step = 0
 
-    def compute_returns(self, last_values, gamma, lam, normalize_advantage: bool = True):
-        advantage = 0
+    def _gae(self, values, rewards, last_values, gamma, lam):
+        """通用 GAE：对单条价值流做反向递归。values/rewards 形状均为 (T, N, 1)。"""
+        advantage = torch.zeros_like(values[0])
+        returns = torch.zeros_like(values)
         for step in reversed(range(self.num_transitions_per_env)):
             # if we are at the last step, bootstrap the return value
             if step == self.num_transitions_per_env - 1:
                 next_values = last_values
             else:
-                next_values = self.values[step + 1]
+                next_values = values[step + 1]
             # 1 if we are not in a terminal state, 0 otherwise
             next_is_not_terminal = 1.0 - self.dones[step].float()
             # TD error: r_t + gamma * V(s_{t+1}) - V(s_t)
-            delta = self.rewards[step] + next_is_not_terminal * gamma * next_values - self.values[step]
+            delta = rewards[step] + next_is_not_terminal * gamma * next_values - values[step]
             # Advantage: A(s_t, a_t) = delta_t + gamma * lambda * A(s_{t+1}, a_{t+1})
             advantage = delta + next_is_not_terminal * gamma * lam * advantage
             # Return: R_t = A(s_t, a_t) + V(s_t)
-            self.returns[step] = advantage + self.values[step]
+            returns[step] = advantage + values[step]
+        return returns, returns - values
 
-        # Compute the advantages
-        self.advantages = self.returns - self.values
+    def compute_returns(
+        self,
+        last_values,
+        gamma,
+        lam,
+        normalize_advantage: bool = True,
+        last_style_values=None,
+        style_lam: float = 0.0,
+    ):
+        """计算任务优势；style_critic 打开时额外算一遍风格优势，两者各自归一化。"""
+        self.returns, self.advantages = self._gae(self.values, self.rewards, last_values, gamma, lam)
         # Normalize the advantages if flag is set
         # This is to prevent double normalization (i.e. if per minibatch normalization is used)
         if normalize_advantage:
             self.advantages = (self.advantages - self.advantages.mean()) / (self.advantages.std() + 1e-8)
+
+        if self.style_values is not None and last_style_values is not None:
+            self.style_returns, self.style_advantages = self._gae(
+                self.style_values, self.style_rewards, last_style_values, gamma, style_lam
+            )
+            if normalize_advantage:
+                self.style_advantages = (self.style_advantages - self.style_advantages.mean()) / (
+                    self.style_advantages.std() + 1e-8
+                )
 
     # for distillation
     def generator(self):
@@ -226,6 +268,14 @@ class RolloutStorage:
         old_mu = self.mu.flatten(0, 1)
         old_sigma = self.sigma.flatten(0, 1)
 
+        # optional style value stream
+        if self.style_values is not None:
+            style_values = self.style_values.flatten(0, 1)
+            style_returns = self.style_returns.flatten(0, 1)
+            style_advantages = self.style_advantages.flatten(0, 1)
+        else:
+            style_values = style_returns = style_advantages = None
+
         # For RND
         if self.rnd_state_shape is not None:
             rnd_state = self.rnd_state.flatten(0, 1)
@@ -261,7 +311,13 @@ class RolloutStorage:
                 yield obs_batch, privileged_observations_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, old_mu_batch, old_sigma_batch, (
                     None,
                     None,
-                ), None, rnd_state_batch
+                ), None, rnd_state_batch, None, None, None, (
+                    style_advantages[batch_idx] if style_advantages is not None else None
+                ), (
+                    style_returns[batch_idx] if style_returns is not None else None
+                ), (
+                    style_values[batch_idx] if style_values is not None else None
+                )
 
     def vae_mini_batch_generator(self, num_mini_batches, num_epochs=8):
         """Same as mini_batch_generator, plus (obs_hist, estimation, live) at the end."""
@@ -291,6 +347,13 @@ class RolloutStorage:
         old_mu = self.mu.flatten(0, 1)
         old_sigma = self.sigma.flatten(0, 1)
         rnd_state = self.rnd_state.flatten(0, 1) if self.rnd_state_shape is not None else None
+        # optional style value stream
+        if self.style_values is not None:
+            style_values = self.style_values.flatten(0, 1)
+            style_returns = self.style_returns.flatten(0, 1)
+            style_advantages = self.style_advantages.flatten(0, 1)
+        else:
+            style_values = style_returns = style_advantages = None
 
         for _ in range(num_epochs):
             for i in range(num_mini_batches):
@@ -313,6 +376,9 @@ class RolloutStorage:
                     obs_history[batch_idx],
                     estimation[batch_idx],
                     1.0 - dones[batch_idx].float(),
+                    style_advantages[batch_idx] if style_advantages is not None else None,
+                    style_returns[batch_idx] if style_returns is not None else None,
+                    style_values[batch_idx] if style_values is not None else None,
                 )
 
     # for reinfrocement learning with recurrent networks

@@ -39,10 +39,8 @@ class AMPLoader:
         0, 1, 2, 3, 4, 5, 
         6, 7, 8, 9, 10, 11,
         12, 13, 14, 
-        # 15, 
-        # 16, 17, 18, 19,
-        # 20,21,22,23,
-        # 24,25,26,27,28
+        # 15, 16, 17, 18, 19,20,21,22,
+        # 23,24,25,26,27,28
     ]
     
     S_JOINT_POS_SIZE = 15 # 选择 剪切 3
@@ -55,7 +53,7 @@ class AMPLoader:
     S_JOINT_VEL_END_IDX = S_JOINT_VEL_START_IDX + S_JOINT_VEL_SIZE
     S_ROOT_ROT_SIZE = 6
     S_ROOT_LINVEL_SIZE = 0
-    S_ROOT_ANGVEL_SIZE = 3
+    S_ROOT_ANGVEL_SIZE = 0
     S_ROOT_ROT_START_IDX = S_JOINT_VEL_END_IDX
     S_ROOT_ROT_END_IDX = S_ROOT_ROT_START_IDX + S_ROOT_ROT_SIZE
     S_ROOT_LINVEL_START_IDX = S_ROOT_ROT_END_IDX
@@ -326,7 +324,7 @@ class AMPLoader:
                     joint_vel_mujoco[:, AMPLoader.joint_mujoco_select].cpu().numpy(), # N
                     root_rot_tan_norm.cpu().numpy(),      # 6
                     # select_root_lin_vel_b.cpu().numpy(),  # 3  root 线速度（机身系）
-                    root_ang_vel_b.cpu().numpy(),         # 3
+                    # root_ang_vel_b.cpu().numpy(),         # 3
                     # select_root_ori.cpu().numpy(), # 6
                     # select_root_lin_vel_b.cpu().numpy(), # 3
                     # select_root_ang_vel_b.cpu().numpy(), # 3

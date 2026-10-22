@@ -13,9 +13,9 @@ from isaaclab.app import AppLauncher
 
 """
 python3 humanoid/scripts/tools/bath_csv_to_npz.py \
-    --input_dir humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/gmr/new_csv1 \
+    --input_dir humanoid/scripts/sim2sim_record_motion \
     --output_dir /home/user/LY/human_z1_lab/huma_robot_lab/humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof \
-    --input_fps 30 \
+    --input_fps 50 \
     --output_fps 50 \
     --robot z123dof \
     --overwrite

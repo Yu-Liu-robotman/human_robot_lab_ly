@@ -149,7 +149,9 @@ class Discriminator(nn.Module):
             normalizer (optional): 逐帧归一化器。
 
         Returns:
-            tuple: (reward, d, style_reward)，形状均为 (B,)。
+            tuple: (reward, d, style_reward, task_reward)，前三个形状均为 (B,)；
+                task_reward 是未经插值的纯任务奖励（style_critic 分流时必须用它，
+                否则 style 会在任务价值里再算一遍）。
         """
         with torch.no_grad():
             self.eval()
@@ -161,10 +163,12 @@ class Discriminator(nn.Module):
             d = self.amp_linear(self.trunk(disc_obs))
             style_reward = self.amp_reward_coef * torch.clamp(1 - (1 / 4) * torch.square(d - 1), min=0)
             reward = style_reward
+            task_reward_flat = None
             if task_reward is not None and self.task_reward_lerp > 0:
                 reward = self._lerp_reward(reward, task_reward.unsqueeze(-1))
+                task_reward_flat = task_reward.squeeze()
             self.train()
-        return reward.squeeze(), d, style_reward.squeeze()
+        return reward.squeeze(), d, style_reward.squeeze(), task_reward_flat
 
     def predict_amp_reward(self, state, next_state, task_reward, normalizer=None):
         """

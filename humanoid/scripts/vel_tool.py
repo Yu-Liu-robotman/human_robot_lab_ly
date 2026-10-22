@@ -9,6 +9,8 @@
     python humanoid/scripts/vel_tool.py <目录|文件> --scale 0.6          # 放慢到 0.6 倍
     python humanoid/scripts/vel_tool.py <目录|文件> --target-vx 1.0      # 自动算 s，把 |vx| 降到 1.0
     python humanoid/scripts/vel_tool.py <目录|文件> --target-vx 1.0 --out-dir /tmp/slow
+    python humanoid/scripts/vel_tool.py <文件> --amp-target-vx 0.30      # 空间缩放（做 AMP 低速数据用它）
+    python humanoid/scripts/vel_tool.py <文件> --amp-scale 0.39          # 直接给幅度系数
     python humanoid/scripts/vel_tool.py <目录|文件>                      # 只看速度，不写文件
     python humanoid/scripts/vel_tool.py --csv-fps 60                    # CSV 帧率（默认 30）
     python humanoid/scripts/vel_tool.py --no-config                     # 不做配置对照
@@ -103,6 +105,35 @@ def retime(data, s):
     return out
 
 
+def amp_scale(data, alpha, min_amp=0.05):
+    """空间缩放：把动作的「摆幅」缩到 alpha 倍，帧数与步频不变。
+
+    与 retime 的关键差别：速度同为 alpha 倍，但抬脚高度与步幅**一起**缩小，
+    得到真实的小步走；retime 是「原步幅 + 原抬脚 + 慢步频」= 原地高抬腿。
+
+    q  = med + alpha * (q - med)    逐关节，med 为该关节中位数（保留姿态偏置）
+    xy = xy0 + alpha * (xy - xy0)   绕首帧缩放平面位移
+    z / 四元数 / 帧数不动
+
+    峰峰值 < min_amp 的关节视为常量（躯干、腕部小抖动），不缩放。
+    """
+    out = np.array(data, dtype=np.float64, copy=True)
+    if out.ndim != 2 or out.shape[0] < 2:
+        raise ValueError("帧数不足，无法缩放")
+    if not 0.0 < alpha <= 3.0:
+        raise ValueError(f"alpha={alpha:g} 超出合理范围 (0, 3]")
+
+    q = out[:, 7:]
+    med = np.median(q, axis=0)
+    flat = (q.max(axis=0) - q.min(axis=0)) < min_amp
+    q_new = med + alpha * (q - med)
+    q_new[:, flat] = q[:, flat]
+    out[:, 7:] = q_new
+
+    out[:, :2] = out[0, :2] + alpha * (out[:, :2] - out[0, :2])
+    return out
+
+
 def write_csv(path, data):
     np.savetxt(path, data, delimiter=",", fmt="%.9g")
 
@@ -148,6 +179,8 @@ def main():
     ap.add_argument("--csv-fps", type=float, default=30.0, help="CSV 帧率（GMR 导出为 30fps）")
     ap.add_argument("--scale", type=float, default=None, help="时间缩放系数：s<1 放慢（vx 变成 s 倍）")
     ap.add_argument("--target-vx", type=float, default=None, help="目标 |vx|，自动算 s = target/|vx|")
+    ap.add_argument("--amp-scale", type=float, default=None, help="空间缩放系数 alpha：摆幅×alpha，帧数不变")
+    ap.add_argument("--amp-target-vx", type=float, default=None, help="空间缩放版 target：alpha = target/|vx|")
     ap.add_argument("--out-dir", default=None, help="输出目录（默认与原文件同目录）")
     ap.add_argument("--slow-only", action="store_true", help="只降速：|vx| 已经不高于目标时跳过")
     ap.add_argument("--force", action="store_true", help="覆盖已存在的输出文件")
@@ -230,6 +263,35 @@ def main():
                 f"{r['name']:40s}{s:6.2f}{r['vx_mean']:+8.2f}{after:+8.2f}"
                 f"{len(new):6d}  {dst}"
             )
+
+    # ---------------- 空间缩放：写出小步幅 / 低抬脚的新 CSV ----------------
+    if args.amp_scale is not None or args.amp_target_vx is not None:
+        print(f"\n{'文件':40s}{'α':>6s}{'vx 前':>8s}{'vx 后':>8s}{'帧':>6s}  输出")
+        print("-" * 100)
+        for r in rows:
+            if args.amp_target_vx is not None:
+                v = abs(r["vx_mean"])
+                if v < 1e-3:
+                    print(f"[跳过] {r['name']}: |vx|≈0，无法按目标 vx 缩放", file=sys.stderr)
+                    continue
+                a = float(args.amp_target_vx) / v
+            else:
+                a = float(args.amp_scale)
+            if not 0.05 <= a <= 3.0:
+                print(f"[跳过] {r['name']}: α={a:.3f} 不合理（0.05~3.0）", file=sys.stderr)
+                continue
+
+            new = amp_scale(np.loadtxt(r["src"], delimiter=",", ndmin=2), a)
+            out_dir = args.out_dir or os.path.dirname(r["src"])
+            stem = os.path.splitext(r["name"])[0]
+            dst = os.path.join(out_dir, f"{stem}_a{a:.2f}.csv")
+            if os.path.exists(dst) and not args.force:
+                print(f"[跳过] {os.path.basename(dst)} 已存在（--force 覆盖）", file=sys.stderr)
+                continue
+            os.makedirs(out_dir, exist_ok=True)
+            write_csv(dst, new)
+            after = analyse(dst, args.csv_fps)["vx_mean"]
+            print(f"{r['name']:40s}{a:6.2f}{r['vx_mean']:+8.2f}{after:+8.2f}{len(new):6d}  {dst}")
 
     if args.no_config:
         return 0

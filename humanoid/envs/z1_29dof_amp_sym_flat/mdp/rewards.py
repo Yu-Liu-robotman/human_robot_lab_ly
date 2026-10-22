@@ -529,31 +529,97 @@ def swing_foot_behind_penalty(
     return torch.sum(torch.clamp(behind, 0.0, 1.0) * swing.float(), dim=1) * gate
 
 
-def swing_foot_trailing_penalty(
+def swing_leg_straight_reward1(
     env: BaseEnv,
-    asset_cfg: SceneEntityCfg,
-    vel_ref: float = 0.60,
-    swing_height_eps: float = 0.01,
+    ankle_cfg: SceneEntityCfg,
+    hip_cfg: SceneEntityCfg,
+    knee_cfg: SceneEntityCfg,
+    flex_full: float = 0.15,
+    flex_zero: float = 0.50,
+    forward_margin: float = 0.04,
+    swing_height_eps: float = 0.02,
+    landing_height: float = 0.10,
+    command_threshold: float = 0.1,
 ) -> torch.Tensor:
-    """约束摆动脚向后甩的速度：相对机身后退越快罚得越多，向前摆不罚。
+    """「触地前腿伸直」：摆动脚已越过髋部前方 **且已降到接近地面** 时，膝屈曲越小给分越高。
 
-    只用「两脚高度差」区分摆动腿和支撑腿 —— 支撑腿相对机身本来就在后退，
-    不区分的话每一下支撑相都会被误罚。没有任何位置/高度门槛，也没有速度死区，
-    摆动腿只要在后移就线性计罚。
+    只看「落地前那一瞬」——人体摆动初期膝屈曲峰值 55~65° 是必需的，
+    若在整段前摆都要求伸直会变成「踢正步」。
+    屈曲角按相对默认位的偏差：<= flex_full(0.15 rad ~8.6deg) 满分，>= flex_zero(0.50 rad ~28.6deg) 为 0。
     """
-    asset: Articulation = env.scene[asset_cfg.name]
-    feet_w = asset.data.body_pos_w[:, asset_cfg.body_ids, :]         # (N, F, 3)
-    feet_v_w = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :]   # (N, F, 3)
+    asset: Articulation = env.scene[ankle_cfg.name]
+    rel_w = (
+        asset.data.body_pos_w[:, ankle_cfg.body_ids, :]
+        - asset.data.body_pos_w[:, hip_cfg.body_ids, :]
+    )
+    x_axis = math_utils.matrix_from_quat(asset.data.root_quat_w)[:, :, 0]
+    x_b = torch.sum(rel_w * x_axis.unsqueeze(1), dim=-1)                 # (N, 2)，脚在髋前方为正
 
-    fwd = math_utils.matrix_from_quat(asset.data.root_quat_w)[:, :, 0]   # 机身 x 轴 = 前方
-    vx_b = torch.sum(feet_v_w * fwd.unsqueeze(1), dim=-1)                # (N, F)，向前为正
+    foot_z = asset.data.body_pos_w[:, ankle_cfg.body_ids, 2]
+    z_low = foot_z.min(dim=-1, keepdim=True)[0]
+    clearance = foot_z - z_low
+    swing = clearance > swing_height_eps            # 腾空脚
+    reaching = clearance < landing_height           # 已降下来、接近触地
 
-    foot_z = feet_w[..., 2]
-    swing = (foot_z > foot_z.min(dim=-1, keepdim=True)[0] + swing_height_eps).float()
+    flex = torch.abs(
+        asset.data.joint_pos[:, knee_cfg.joint_ids]
+        - asset.data.default_joint_pos[:, knee_cfg.joint_ids]
+    )                                                                    # (N, 2)
+    straight = torch.clamp(
+        (flex_zero - flex) / max(flex_zero - flex_full, 1e-6), 0.0, 1.0
+    )
 
-    back_vel = torch.clamp(-vx_b, min=0.0)                               # 只罚向后
-    return torch.sum(back_vel / max(vel_ref, 1e-6) * swing, dim=-1)
+    active = swing & reaching & (x_b > forward_margin)
+    gate = (torch.linalg.vector_norm(env.command_generator.command[:, :3], dim=1) > command_threshold).float()
+    return torch.clamp(torch.sum(straight * active.float(), dim=1), max=1.0) * gate
+def _smoothstep(edge0: float, edge1: float, x: torch.Tensor) -> torch.Tensor:
+    """3t²-2t³ 平滑阶跃：在 edge0/edge1 两端导数均为 0，C¹ 连续。"""
+    t = torch.clamp((x - edge0) / max(edge1 - edge0, 1e-6), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
 
+
+def swing_leg_straight_smooth_reward(
+    env: BaseEnv,
+    ankle_cfg: SceneEntityCfg,
+    hip_cfg: SceneEntityCfg,
+    knee_cfg: SceneEntityCfg,
+    flex_full: float = 0.15,
+    flex_zero: float = 0.50,
+    forward_margin: float = 0.04,
+    swing_height_eps: float = 0.02,
+    landing_height: float = 0.10,
+    ramp: float = 0.02,
+    command_threshold: float = 0.1,
+) -> torch.Tensor:
+    """「踢腿丝滑版」：所有门控换成 smoothstep，C¹ 连续，没有 0/1 硬开关。
+
+    w = 起摆(clearance↑) × 近地(clearance↓) × 在前方(x_b↑) × 膝伸直(1-smoothstep(flex))
+    """
+    asset: Articulation = env.scene[ankle_cfg.name]
+    rel_w = (
+        asset.data.body_pos_w[:, ankle_cfg.body_ids, :]
+        - asset.data.body_pos_w[:, hip_cfg.body_ids, :]
+    )
+    x_axis = math_utils.matrix_from_quat(asset.data.root_quat_w)[:, :, 0]
+    x_b = torch.sum(rel_w * x_axis.unsqueeze(1), dim=-1)
+
+    foot_z = asset.data.body_pos_w[:, ankle_cfg.body_ids, 2]
+    clearance = foot_z - foot_z.min(dim=-1, keepdim=True)[0]
+
+    # 平滑包络：离地低→抬起来，再接近地面→收回去
+    w_lift = _smoothstep(swing_height_eps, swing_height_eps + ramp, clearance)
+    w_low = 1.0 - _smoothstep(landing_height - ramp, landing_height, clearance)
+    w_fwd = _smoothstep(forward_margin, forward_margin + 2.0 * ramp, x_b)
+
+    flex = torch.abs(
+        asset.data.joint_pos[:, knee_cfg.joint_ids]
+        - asset.data.default_joint_pos[:, knee_cfg.joint_ids]
+    )
+    w_straight = 1.0 - _smoothstep(flex_full, flex_zero, flex)
+
+    per_foot = w_lift * w_low * w_fwd * w_straight
+    gate = (torch.linalg.vector_norm(env.command_generator.command[:, :3], dim=1) > command_threshold).float()
+    return torch.clamp(torch.sum(per_foot, dim=1), max=1.0) * gate
 
 def arm_swing_natural(
     env: BaseEnv,
