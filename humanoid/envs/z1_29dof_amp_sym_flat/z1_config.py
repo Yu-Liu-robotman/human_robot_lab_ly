@@ -21,7 +21,7 @@ from humanoid.envs.base.base_env_config import (  # noqa:F401
     RslRlDualPolicyDistillationAlgorithmCfg,
     RslRlDualPolicyDistillationRunnerCfg,
 )
-from humanoid.terrains import DWAQ_TERRAINS_CFG
+from humanoid.terrains import AMP_FLAT_ROUGH_TERRAINS_CFG, DWAQ_TERRAINS_CFG
 
 from isaaclab_rl.rsl_rl import (  # noqa:F401
     RslRlOnPolicyRunnerCfg,
@@ -68,66 +68,81 @@ AMP_LOADER_JOINT_DIM = {
 @configclass
 class Z129DOFRewardCfg(RewardCfg):
     # Base Code Reward *
-    # track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_exp, weight=2.0, params={"std": 0.35}) # 3.0
-    # track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_exp, weight=1.50, params={"std": 0.25})   # 3.0
-    # flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2_limit_run, weight=-1.0)
+    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_yaw_frame_exp, weight=2.0, params={"std": 0.35}) # 3.0
+    track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_world_exp, weight=1.50, params={"std": 0.25})   # 3.0
+    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2_limit_run, weight=-1.0)
     lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-1.0)
-    ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-2.0)
+    ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.5)
     dof_torques_l2 = RewTerm(func=mdp.applied_torque_limits, weight=-0.01)
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.0e-7)
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.05)
-    # dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-10.0,
-    #     params={"asset_cfg": SceneEntityCfg("robot", joint_names=["leg_.*_joint", "torso_.*_joint", "arm_.*_joint"])})
+    dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-10.0,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["leg_.*_joint", "torso_.*_joint", "arm_.*_joint"])})
     termination_penalty = RewTerm(func=mdp.is_terminated, weight=-20.0)
-    # feet_not_lifted_when_commanded = RewTerm(func=z1_mdp.feet_not_lifted_when_commanded, weight=-2.0,
-    #     params={
-    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
-    #         "command_threshold": 0.23,
-    #         "min_contact_time": 0.05,
-    #     })
+    feet_not_lifted_when_commanded = RewTerm(func=z1_mdp.feet_not_lifted_when_commanded, weight=-1.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+            "command_threshold": COMMAND_THRESHOLD,
+            "min_contact_time": 0.25,
+        })
     # -------------------
-    feet_impact_vel = RewTerm(func=z1_mdp.feet_impact_vel, weight=-1.0,
+    feet_impact_vel = RewTerm(
+        func=z1_mdp.feet_impact_vel_soft,     # ★ 换函数
+        weight=-1.5,                          # ★ -4.0 → -1.5
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
-            "height_scale": 0.04,          
+            "height_scale": 0.06,
+            "free_descend_vel": 0.25,         # ★ 慢于 0.25 m/s 完全不罚
+            "command_threshold": COMMAND_THRESHOLD,
+            "include_turning": True,
         })
 
     body_orientation_l2 = RewTerm(func=mdp.body_orientation_l2, weight=-2.0,
         params={"asset_cfg": SceneEntityCfg("robot", body_names="base_link"),
                 "tolerance": 0.09})
-    # # add* 站立姿态优化 X
-    # # stand_still_joint_deviation_l1 = RewTerm(func=mdp.leglab_stand_still_joint_deviation_l1, weight=-2,
-    # #     params={
-    # #         "command_threshold": COMMAND_THRESHOLD,
-    # #         "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
-    # #         "stand_cmd": True,
-    # #     })
+    # add* 站立姿态优化 X
+    stand_still_joint_deviation_l1 = RewTerm(func=mdp.leglab_stand_still_joint_deviation_l1, weight=-2,
+        params={
+            "command_threshold": COMMAND_THRESHOLD,
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*_joint"),
+            "stand_cmd": True,
+        })
 
-    # feet_air_time = RewTerm(
-    #     func=mdp.adaptive_feet_air_time_positive_biped,
-    #     weight=1.0,  # 1.0
-    #     params={
-    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
-    #         "low_speed_threshold": 0.30, # 0.35
-    #         "high_speed_threshold": 0.12, # 0.6
-    #         "stand_cmd": True,
-    #         "command_threshold": COMMAND_THRESHOLD
-    #     },
-    # )
-    # feet_slide = RewTerm(
-    #     func=mdp.feet_slide,
-    #     weight=-0.1,
-    #     params={
-    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
-    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
-    #     },
-    # )
-
+    feet_air_time = RewTerm(
+        func=mdp.adaptive_feet_air_time_positive_biped,
+        weight=1.0,  # 1.0
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*ankle_roll.*"),
+            "low_speed_threshold": 0.26, # 0.35
+            "high_speed_threshold": 0.12, # 0.6
+            "stand_cmd": True,
+            "command_threshold": COMMAND_THRESHOLD
+        },
+    )
+    feet_slide = RewTerm(
+        func=mdp.feet_slide,
+        weight=-0.1,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=".*_ankle_roll_link"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+        },
+    )
+    gradient_head_height_getup = RewTerm(
+        func=z1_mdp.gradient_head_height,
+        weight=0.1,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "head_name": ["torso_pitch_link"],
+            "feet_names": ["leg_left_ankle_roll_link", "leg_right_ankle_roll_link"],
+            "head_height_target": 1,
+            "target_head_margin": 0.8,
+        },
+    )
 # -----------------------------------------------------------------------
-    # # 「踢腿出去时腿要直」：摆动脚越过髋部前方时，膝屈曲越小给分越高
+    # 「踢腿出去时腿要直」：摆动脚越过髋部前方时，膝屈曲越小给分越高
     swing_leg_straight = RewTerm(
         func=z1_mdp.swing_leg_straight_smooth_reward,
-        weight=0.6,                     # 从 0.6 降到 0.3，别让它当唯一正项主导
+        weight=4,
         params={
             "ankle_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link", preserve_order=True),
             "hip_cfg": SceneEntityCfg("robot", body_names=[".*_hip_pitch_link"], preserve_order=True),
@@ -135,11 +150,11 @@ class Z129DOFRewardCfg(RewardCfg):
                 joint_names=["leg_left_knee_joint", "leg_right_knee_joint"], preserve_order=True),
             "flex_full": 0.15,
             "flex_zero": 0.50,
-            "forward_margin": 0.04,
-            "swing_height_eps": 0.02,
-            "landing_height": 0.10,     # 0.05 太窄，配合平滑窗用 0.10
-            "ramp": 0.08,               # 过渡带宽度，越大越柔
-            "command_threshold": COMMAND_THRESHOLD,
+            "forward_margin": -0.05,    # ★ 0.04 → -0.05：w_fwd 窗口变成 [-0.05, 0.01]，几乎全程满分
+            "swing_height_eps": 0.01,
+            "landing_height": 0.14,     # ★ 0.10 → 0.12
+            "ramp": 0.08,               # ★ 0.08 → 0.03：形成平台 clearance∈[0.05, 0.09]
+            "command_threshold": 0.05,
         },
     )
     arm_swing_natural = RewTerm(func=z1_mdp.arm_swing_natural, weight=-1.0,
@@ -165,6 +180,7 @@ class Z129DOFRewardCfg(RewardCfg):
                 "arm_left_elbow_joint", "arm_right_elbow_joint"]),
             "roll_offset": 0.05, "roll_gain": 10.0,
             "elbow_deadband": 0.0, "elbow_vel_gain": 0.0,
+            "command_threshold": COMMAND_THRESHOLD,
         })
     
 @configclass
@@ -206,8 +222,10 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         super().__post_init__()
         self.scene.height_scanner.prim_body_name = "base_link"
         self.scene.robot = Z129DOF
-        self.scene.terrain_type = "plane"
-        # self.scene.terrain_type = "generator"
+        # 仿 engineai_rl_lab：±2cm 随机起伏地面，无课程，所有 tile 难度一致
+        self.scene.terrain_type = "generator"
+        self.scene.terrain_generator = AMP_FLAT_ROUGH_TERRAINS_CFG
+        # self.scene.terrain_type = "plane"
         # self.scene.terrain_generator = DWAQ_TERRAINS_CFG
         self.robot.terminate_contacts_body_names = ["base_link"]
         self.robot.feet_body_names = [".*ankle_roll.*"]
@@ -217,8 +235,8 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         self.commands.heading_command = False
         # (name, weight, lin_vel_x, lin_vel_y, ang_vel_z)
         self.commands.modes = [
-            # CommandModeCfg(name="stand", weight=0.20, lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
-            CommandModeCfg(name="forward", weight=1.00, lin_vel_x=(0.45, WALK_VX), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
+            CommandModeCfg(name="stand", weight=0.20, lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
+            CommandModeCfg(name="forward", weight=0.80, lin_vel_x=(COMMAND_THRESHOLD, WALK_VX), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
             # CommandModeCfg(name="backward", weight=0.10, lin_vel_x=(WALK_VX_BACK, -COMMAND_THRESHOLD), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
             # CommandModeCfg(name="side", weight=0.10, lin_vel_x=(0.0, 0.0), lin_vel_y=(-WALK_VY, WALK_VY), ang_vel_z=(0.0, 0.0)),
             # CommandModeCfg(name="turn", weight=0.10, lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(-WALK_WZ, WALK_WZ)),
@@ -240,27 +258,37 @@ class Z129DOFFlatEnvCfg(BaseEnvCfg):
         # Height scanner - asymmetric AC (actor is blind, critic has terrain info)
         self.scene.height_scanner.enable_height_scan = True
         self.scene.height_scanner.critic_only = True  # Actor is blind
-        # add*
-        self.domain_rand.events.push_robot.interval_range_s = (4.0, 10.0)
-        # self.domain_rand.events.push_robot.params["velocity_range"] = {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}
-        self.domain_rand.events.push_robot.params["velocity_range"] = {"x": (-0.0, 0.0), "y": (-0.0, 0.0)}
+        # add* push curriculum (additive, scale=0 means no push)
+        self.domain_rand.events.push_robot = EventTerm(
+            func=z1_events.push_robot_curriculum,
+            mode="interval",
+            interval_range_s=(4.0, 10.0),
+            params={
+                "velocity_range": {"x": (-0.65, 0.65), "y": (-0.50, 0.50)},  # dv at scale=1 (m/s)
+                "start_scale": 0.0,      # no push at the beginning
+                "end_scale": 1.0,        # full strength
+                "warmup_steps": 24 * 2000,   # ctrl steps, ~2000 iters
+                "ramp_steps": 24 * 5000,    # ctrl steps, ~12000 iters
+                "power": 1.5,            # >1: slow first, fast later
+            },
+        )
         self.scene.max_episode_length_s = 10
-        # # add* 手臂负载等效力（世界系：重力 + 横向摆动 + 随机推力，自动均摊到 14 根手臂连杆）
-        # self.domain_rand.events.upper_body_load = EventTerm(
-        #     func=z1_events.apply_payload_wrench,
-        #     mode="interval",
-        #     interval_range_s=(0.25, 0.6),      # 0.25~0.6s 换一次摆动方向
-        #     params={
-        #         "asset_cfg": SceneEntityCfg(
-        #             "robot", body_names=UPPER_BODY_BODY_NAMES, preserve_order=True
-        #         ),
-        #         "total_mass": (0.0, 2.5),      # 整条手臂链的总负载(kg)，自动均摊
-        #         "lateral_gain": 0.25,          # 横向摆动 ≈ 25% 重力
-        #         "tilt_gain": 0.05,
-        #         "push_range": (-2.0, 2.0),     # 每连杆每轴 ±2N 随机推力（世界系 xy）
-        #         "push_z_range": (-1.0, 1.0),   # z 单独给，避免过大向上力
-        #     },
-        # )
+        # add* 手臂负载等效力（世界系：重力 + 横向摆动 + 随机推力，自动均摊到 14 根手臂连杆）
+        self.domain_rand.events.upper_body_load = EventTerm(
+            func=z1_events.apply_payload_wrench,
+            mode="interval",
+            interval_range_s=(0.25, 0.6),      # 0.25~0.6s 换一次摆动方向
+            params={
+                "asset_cfg": SceneEntityCfg(
+                    "robot", body_names=UPPER_BODY_BODY_NAMES, preserve_order=True
+                ),
+                "total_mass": (0.0, 2.5),      # 整条手臂链的总负载(kg)，自动均摊
+                "lateral_gain": 0.25,          # 横向摆动 ≈ 25% 重力
+                "tilt_gain": 0.05,
+                "push_range": (-2.0, 2.0),     # 每连杆每轴 ±2N 随机推力（世界系 xy）
+                "push_z_range": (-1.0, 1.0),   # z 单独给，避免过大向上力
+            },
+        )
         # # add* IMU 安装/零点偏置 + 陀螺零偏：每个 episode 重采样（只进 actor 观测）
         # self.domain_rand.events.imu_bias = EventTerm(
         #     func=mdp.randomize_imu_bias,
@@ -282,9 +310,7 @@ class Z129DOFAmpFlatAgentCfg(BaseAgentCfg):
     amp_task_reward_lerp = 0.5
     amp_motion_files = [
             # 前进 vx > 0
-            # ("fwalk_1", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/walk_subject1_segment_0122-0268_07_s0.39.txt"),  
-            # ("fwalk_2", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/walk_subject1_segment_0122-0268_07_s0.65.txt"),
-            ("fwalk_3", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/walk_subject1_segment_0122-0268_07_new.txt"),
+            ("fwalk_3", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/time2.txt"),
                         
             # # 后退 vx < 0
             # # ("bwalk", "humanoid/envs/z1_29dof_amp_sym_flat/datasets/23dof/txt/23dof_back_02.txt"),
@@ -316,9 +342,7 @@ class Z129DOFAmpFlatAgentCfg(BaseAgentCfg):
     ]        
     amp_motion_cmd_ranges = {
         # "stand": [((-COMMAND_THRESHOLD, COMMAND_THRESHOLD),(-COMMAND_THRESHOLD, COMMAND_THRESHOLD),(-COMMAND_THRESHOLD, COMMAND_THRESHOLD))],
-        # "fwalk_1": [((COMMAND_THRESHOLD, 0.42), (0,0), (0,0))],
-        # "fwalk_2": [((0.42, 0.66),              (0,0), (0,0))],
-        "fwalk_3": [((0.45, WALK_VX),           (0,0), (0,0))],
+        "fwalk_3":   [((COMMAND_THRESHOLD, WALK_VX),          (0, 0), (0, 0))],
         # "fwalk_fast": [((0.7, 1.2), (0.0, 0.0), (0.0, 0.0))],
         # "bwalk": [((-2.0, -0.1), (0.0, 0.0), (0.0, 0.0))],
         # "turn": [((0.0, 0.0), (0.0, 0.0), (0.1, WALK_WZ)), ((0.0, 0.0), (0.0, 0.0), (-WALK_WZ, -0.1))],
@@ -355,9 +379,15 @@ class Z129DOFAmpVaeSymAgentCfg(Z129DOFAmpFlatAgentCfg):
             "vel_weight": 1.0,
         }
         self.algorithm.style_critic = True
-        self.algorithm.style_critic_coef = 1.0 # amp模仿强度
+        self.algorithm.style_critic_coef = 0.7
         self.algorithm.style_value_coef = 1.0
         self.algorithm.style_lam = 0.95
+        # w_style 课程
+        self.algorithm.style_critic_coef_start = 1.0   # 初期几乎纯 style（模仿）
+        self.algorithm.style_critic_coef_end = 0.7       # 终值 = style_critic_coef
+        self.algorithm.style_critic_coef_warmup = 1000   # 0~2000 iter 维持 start
+        self.algorithm.style_critic_coef_iters = 2000    # 到 8000 iter 降到 end
+        self.algorithm.style_critic_coef_power = 1.5     # >1: 前期降得慢，后期快
 
 # Getup-AMP
 # ---------------- Getup reward scales ----------------

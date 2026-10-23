@@ -572,6 +572,7 @@ def swing_leg_straight_reward1(
     active = swing & reaching & (x_b > forward_margin)
     gate = (torch.linalg.vector_norm(env.command_generator.command[:, :3], dim=1) > command_threshold).float()
     return torch.clamp(torch.sum(straight * active.float(), dim=1), max=1.0) * gate
+
 def _smoothstep(edge0: float, edge1: float, x: torch.Tensor) -> torch.Tensor:
     """3t²-2t³ 平滑阶跃：在 edge0/edge1 两端导数均为 0，C¹ 连续。"""
     t = torch.clamp((x - edge0) / max(edge1 - edge0, 1e-6), 0.0, 1.0)
@@ -700,6 +701,7 @@ def arm_clear_body(
     roll_gain: float = 10.0,        # roll 的额外权重：把它**锁死**，不许收来收去
     elbow_deadband: float = 0.0,    # 肘位置惩罚死区(rad)；<=0 = 不罚位置（肘轨迹交给 arm_swing_natural）
     elbow_vel_gain: float = 0.0,    # 肘角速度阻尼；默认 0，避免与 arm_swing_natural 重复罚
+    command_threshold: float = 0.1, # 只在有速度指令(行走)时生效；站立/零指令不罚
 ) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
     assert len(asset_cfg.joint_ids) == 6, "joint_ids 必须是 [左roll, 右roll, 左yaw, 右yaw, 左肘, 右肘]"
@@ -721,4 +723,7 @@ def arm_clear_body(
     else:
         elbow = 0.0
     damp = elbow_vel_gain * torch.sum(qd[:, 4:] ** 2, dim=-1)                     # 肘阻尼
-    return roll + yaw + elbow + damp
+    active = (
+        torch.linalg.vector_norm(env.command_generator.command[:, :3], dim=1) > command_threshold
+    ).float()
+    return (roll + yaw + elbow + damp) * active

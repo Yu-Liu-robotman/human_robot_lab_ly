@@ -241,3 +241,59 @@ def reset_root_state_from_motion(
     asset.write_root_pose_to_sim(torch.cat([root_pos, root_quat], dim=-1), env_ids=env_ids)
     asset.write_root_velocity_to_sim(root_vel * velocity_scale, env_ids=env_ids)
     asset.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+
+
+def push_robot_curriculum(
+    env: BaseEnv,
+    env_ids: torch.Tensor | None,
+    velocity_range: dict[str, tuple[float, float]],
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    start_scale: float = 0.0,
+    end_scale: float = 1.0,
+    warmup_steps: int = 0,
+    ramp_steps: int = 20000,
+    power: float = 1.0,
+):
+    """Additive random push with a magnitude curriculum (interval event).
+
+    Differs from ``push_by_setting_velocity``: the root velocity is incremented instead of
+    overwritten, so ``scale == 0`` means no push at all. Scaling the upstream range down to
+    zero would instead rewrite the velocity to zero every interval (a hard brake).
+
+    ``velocity_range`` is the increment range at scale=1; only listed axes are pushed.
+    ``warmup_steps`` / ``ramp_steps`` are counted in control steps
+    (``sim_step_counter // decimation``), i.e. ~``num_steps_per_env`` per iteration.
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    decimation = max(1, int(getattr(env.cfg.sim, "decimation", 1)))
+    step = int(getattr(env, "sim_step_counter", 0)) // decimation
+    if ramp_steps <= 0:
+        scale = float(end_scale)
+    elif step <= warmup_steps:
+        scale = float(start_scale)
+    else:
+        p = min(max((step - int(warmup_steps)) / float(ramp_steps), 0.0), 1.0)
+        scale = float(start_scale) + (float(end_scale) - float(start_scale)) * (p ** float(power))
+
+    keys = ("x", "y", "z", "roll", "pitch", "yaw")
+    lo = torch.tensor([float(velocity_range.get(k, (0.0, 0.0))[0]) for k in keys], device=asset.device)
+    hi = torch.tensor([float(velocity_range.get(k, (0.0, 0.0))[1]) for k in keys], device=asset.device)
+
+    if "log" not in env.extras:
+        env.extras["log"] = {}
+    env.extras["log"]["push_robot/scale"] = scale
+    env.extras["log"]["push_robot/dv_x_max"] = float(max(abs(lo[0]), abs(hi[0]))) * scale
+    env.extras["log"]["push_robot/dv_y_max"] = float(max(abs(lo[1]), abs(hi[1]))) * scale
+
+    if scale <= 0.0:
+        return
+    if env_ids is None:
+        env_ids = torch.arange(asset.num_instances, device=asset.device)
+    n = len(env_ids)
+    if n == 0:
+        return
+
+    delta = math_utils.sample_uniform(lo * scale, hi * scale, (n, 6), device=asset.device)
+    vel_w = asset.data.root_vel_w[env_ids].clone() + delta
+    asset.write_root_velocity_to_sim(vel_w, env_ids=env_ids)

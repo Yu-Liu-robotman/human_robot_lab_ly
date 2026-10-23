@@ -33,6 +33,28 @@ GRAVEL_TERRAINS_CFG = TerrainGeneratorCfg(
     },
 )
 
+# ========== 仿 engineai_rl_lab AMP 地形 ==========
+AMP_FLAT_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
+    size=(8.0, 8.0),
+    border_width=20.0,
+    num_rows=10,
+    num_cols=20,
+    horizontal_scale=0.1,
+    vertical_scale=0.005,
+    slope_threshold=0.75,
+    use_cache=False,
+    curriculum=False,
+    sub_terrains={
+        "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
+            proportion=1.0,
+            noise_range=(-0.02, 0.02),
+            noise_step=0.005,
+            downsampled_scale=0.2,
+            border_width=0.25,
+        ),
+    },
+)
+
 SLOPE_TERRAINS_CFG = TerrainGeneratorCfg(
     curriculum=True,
     size=(8.0, 8.0),

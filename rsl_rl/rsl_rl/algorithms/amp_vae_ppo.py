@@ -73,6 +73,12 @@ class AMPVAEPPO:
         style_critic_coef: float = 0.5,
         style_value_coef: float = 0.5,
         style_lam: float = 0.0,
+        # optional curriculum for style_critic_coef: hold at start until `warmup`, then decay to end at `iters`
+        style_critic_coef_start: float | None = None,
+        style_critic_coef_end: float | None = None,
+        style_critic_coef_iters: int = 0,
+        style_critic_coef_warmup: int = 0,
+        style_critic_coef_power: float = 1.0,
     ):
         # device-related parameters
         self.device = device
@@ -209,6 +215,16 @@ class AMPVAEPPO:
         self.style_value_coef = float(style_value_coef)
         self.style_lam = float(style_lam)
 
+        # style_critic_coef curriculum (None/0 disables it -> constant coef)
+        # 注意：iters / warmup 的单位是 **update() 调用次数**（= 迭代数），不是控制步数
+        self.style_critic_coef_start = style_critic_coef_start
+        self.style_critic_coef_end = style_critic_coef_end
+        self.style_critic_coef_iters = int(style_critic_coef_iters)
+        self.style_critic_coef_warmup = int(style_critic_coef_warmup)
+        self.style_critic_coef_power = float(style_critic_coef_power)
+        self.num_updates_done = 0
+        self.style_coef_now = self.style_critic_coef
+
     def init_storage(
         self,
         training_type,
@@ -343,6 +359,20 @@ class AMPVAEPPO:
         flat = self.amp_normalizer.normalize_torch(window.reshape(b * n, d), self.device)
         return flat.reshape(b, n, d)
 
+    def _style_coef_scheduled(self) -> float:
+        """Current w_style: hold at start until `warmup`, then anneal to end at `iters`."""
+        s = self.style_critic_coef_start
+        e = self.style_critic_coef_end
+        n = self.style_critic_coef_iters
+        if not self.style_critic or s is None or e is None or n <= 0:
+            return self.style_critic_coef
+        w = self.style_critic_coef_warmup
+        if self.num_updates_done <= w:
+            return float(s)
+        span = max(n - w, 1)
+        t = min((self.num_updates_done - w) / float(span), 1.0)
+        return float(s) + (float(e) - float(s)) * (t ** self.style_critic_coef_power)
+
     def update(self):  # noqa: C901
         def _ppo_surrogate(adv, ratio):
             s = -torch.squeeze(adv) * ratio
@@ -354,6 +384,9 @@ class AMPVAEPPO:
                 v_clipped = tgt + (v - tgt).clamp(-self.clip_param, self.clip_param)
                 return torch.max((v - ret).pow(2), (v_clipped - ret).pow(2)).mean()
             return (ret - v).pow(2).mean()
+
+        self.style_coef_now = self._style_coef_scheduled()
+        self.num_updates_done += 1
 
         mean_value_loss = 0
         mean_surrogate_loss = 0
@@ -545,7 +578,7 @@ class AMPVAEPPO:
 
             mixed_adv = _norm_adv(advantages_batch)
             if self.style_critic:
-                mixed_adv = mixed_adv + self.style_critic_coef * _norm_adv(style_advantages_batch)
+                mixed_adv = mixed_adv + self.style_coef_now * _norm_adv(style_advantages_batch)
 
             # Eq.(7): single clipped surrogate
             ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
@@ -765,6 +798,7 @@ class AMPVAEPPO:
                 loss_dict["vae_kl"] = mean_vae_kl_loss
         if self.style_critic:
             loss_dict["style_value"] = mean_style_value_loss
+            loss_dict["style_coef"] = float(self.style_coef_now)
         if self.rnd:
             loss_dict["rnd"] = mean_rnd_loss
         if self.symmetry:
